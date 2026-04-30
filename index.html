@@ -1,765 +1,903 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LM 가이드 레일 절단 최적화</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'맑은 고딕','Apple SD Gothic Neo',Arial,sans-serif;background:#f5f7fa;color:#1a1a2e;font-size:13px}
-.topbar{background:#1F4E79;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.18)}
-.topbar-left h1{font-size:17px;font-weight:700}
-.topbar-left .sub{font-size:11px;opacity:.75;margin-top:2px}
-.container{max-width:1200px;margin:0 auto;padding:18px 16px}
-.tab-bar{display:flex;background:#fff;border-radius:10px 10px 0 0;border:1px solid #d0d9e8;border-bottom:none;overflow:hidden}
-.tab{padding:11px 24px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:#5a6a80;transition:all .15s;font-family:inherit}
-.tab:hover{background:#f0f5fb;color:#1F4E79}
-.tab.active{background:#1F4E79;color:#fff}
-.tab-content{display:none;background:#fff;border:1px solid #d0d9e8;border-radius:0 10px 10px 10px;padding:20px}
-.tab-content.active{display:block}
-.section{border:1px solid #d0d9e8;border-radius:8px;padding:14px;margin-bottom:14px;background:#fff}
-.sec-title{font-size:12px;font-weight:700;color:#2E75B6;margin-bottom:10px;display:flex;align-items:center;gap:7px}
-.badge{font-size:10px;background:#e8f1fb;color:#1F4E79;padding:2px 8px;border-radius:20px;font-weight:500}
-.notice{background:#fff8e6;border:1px solid #ffe08a;border-radius:6px;padding:7px 12px;font-size:11px;color:#7a6000;margin-bottom:10px}
-.info-box{background:#e8f3ff;border:1px solid #b3d1f7;border-radius:6px;padding:8px 12px;font-size:11px;color:#1F4E79;margin-bottom:10px}
-.setting-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.setting-item{display:flex;align-items:center;gap:6px;font-size:12px;color:#444}
-.setting-item label{color:#5a6a80;white-space:nowrap;font-weight:500}
-.setting-item input{padding:5px 9px;border:1px solid #c8d4e4;border-radius:6px;font-size:12px;background:#f8fafd;color:#1a1a2e;font-family:inherit}
-.setting-item input[type=number]{width:70px;text-align:center}
-.setting-item input[type=text]{width:110px}
-table.inp{width:100%;border-collapse:collapse}
-table.inp th{background:#eef4fb;font-weight:600;font-size:11px;padding:7px 8px;text-align:center;border:1px solid #d0d9e8;color:#2E75B6}
-table.inp td{padding:3px 4px;border:1px solid #e5ecf5;text-align:center;background:#fff}
-table.inp tr:nth-child(even) td{background:#f8fafd}
-table.inp input,table.inp select{width:100%;border:none;background:transparent;font-size:12px;padding:4px 6px;color:#1a1a2e;text-align:center;font-family:inherit;outline:none}
-table.inp input:focus{background:#e8f3ff;border-radius:4px}
-.auto-cell{font-weight:700;color:#1F4E79;font-size:12px}
-.pitch-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700}
-.p20{background:#fce4d6;color:#833C00}
-.p25{background:#e2f0d9;color:#375623}
-.p30{background:#e8f3ff;color:#1F4E79}
-.p40{background:#f3e8ff;color:#7030A0}
-.p60{background:#dce6f1;color:#1F4E79}
-.p80{background:#fff2cc;color:#7a6000}
-.p105{background:#fde8ea;color:#c00}
-.btn{padding:8px 18px;border-radius:7px;border:1px solid #c8d4e4;background:#fff;color:#333;font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;transition:all .15s}
-.btn:hover{background:#eef4fb;border-color:#2E75B6;color:#1F4E79}
-.btn-primary{background:#1F4E79;color:#fff;border-color:#1F4E79;font-size:13px;padding:10px 28px}
-.btn-primary:hover{background:#16396b}
-.btn-sm{padding:4px 10px;font-size:11px}
-.btn-del{border-color:#f5c6cb;color:#c00;background:#fff9fa}
-.btn-del:hover{background:#fde8ea}
-.btn-add{border-color:#b3d1f7;color:#1F4E79;background:#f0f7ff}
-.flex{display:flex;align-items:center;gap:8px}
-.flex-end{justify-content:flex-end}
-.mt8{margin-top:8px}
-.result-block{border:1px solid #d0d9e8;border-radius:10px;padding:16px;margin-bottom:18px;background:#fff}
-.model-hdr{background:linear-gradient(90deg,#1F4E79,#2E75B6);color:#fff;border-radius:7px;padding:10px 16px;font-weight:700;font-size:12px;margin-bottom:12px}
-.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-.stat{background:#eef4fb;border-radius:8px;padding:8px 14px;text-align:center;min-width:90px;border:1px solid #d0e4f5}
-.stat-val{font-size:18px;font-weight:700;color:#1F4E79}
-.stat-lbl{font-size:10px;color:#6a7d95;margin-top:2px}
-.legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;font-size:11px;padding:7px 10px;background:#f8fafd;border-radius:6px;border:1px solid #e5ecf5}
-.legend-item{display:flex;align-items:center;gap:4px}
-.legend-swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0}
-.pattern-tbl{width:100%;border-collapse:collapse;font-size:11px}
-.pattern-tbl th{background:#eef4fb;padding:6px 8px;text-align:center;border:1px solid #d0d9e8;font-weight:600;font-size:10px;color:#2E75B6}
-.pattern-tbl td{padding:4px 5px;border:1px solid #e5ecf5;text-align:center;vertical-align:middle}
-.pattern-tbl tr:nth-child(odd) td{background:#f8fafd}
-.no-badge{display:inline-block;width:24px;height:24px;border-radius:50%;background:#1F4E79;color:#fff;text-align:center;line-height:24px;font-weight:700;font-size:12px}
-.rep-badge{font-weight:700;color:#1F4E79;font-size:13px}
-.bar-wrap{display:flex;height:36px;border-radius:5px;overflow:hidden;width:100%;border:1px solid #dde7f3}
-.bar-seg{display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;line-height:1.15;text-align:center;overflow:hidden}
-.bar-seg.waste-reuse{background:#fff9c0;color:#7a6000;font-weight:600;border-left:2px solid #e6d000}
-.bar-seg.waste-no{background:#e0e0e0;color:#666}
-.verify-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
-.verify-tbl th{background:#eef4fb;padding:6px 10px;border:1px solid #d0d9e8;text-align:center;font-weight:600;font-size:11px;color:#2E75B6}
-.verify-tbl td{padding:5px 10px;border:1px solid #e5ecf5;text-align:center}
-.verify-tbl tr:nth-child(even) td{background:#f8fafd}
-.ok{background:#e6f7ee!important;color:#1a7a45;font-weight:700}
-.ng{background:#fde8ea!important;color:#c00028;font-weight:700}
-.summary-box{background:#eef4fb;border:1px solid #d0d9e8;border-radius:8px;padding:14px;margin-top:4px}
-.empty{text-align:center;padding:60px;color:#a0aab8;font-size:14px}
-.err-cell input,.err-cell select{background:#fde8ea!important;color:#c00!important;border:1.5px solid #f5c6cb!important;border-radius:4px}
-.err-cell{background:#fff5f5!important}
-.warn-cell input,.warn-cell select{background:#fff8e6!important;color:#7a6000!important;border:1.5px solid #ffe08a!important;border-radius:4px}
-.warn-cell{background:#fffbf0!important}
-.valid-cell input{background:#f0fff4!important}
-.g-err{position:relative}
-.g-err input{background:#fde8ea!important;color:#c00!important;border:1.5px solid #f5c6cb!important;border-radius:4px}
-.g-err::after{content:attr(data-tip);position:absolute;bottom:110%;left:50%;transform:translateX(-50%);background:#c00;color:#fff;padding:5px 10px;border-radius:6px;font-size:11px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s;z-index:999;max-width:280px;white-space:normal;min-width:180px;line-height:1.4}
-.g-err:hover::after{opacity:1}
-.g-warn{position:relative}
-.g-warn input{background:#fff8e6!important;color:#7a6000!important;border:1.5px solid #ffe08a!important;border-radius:4px}
-.g-warn::after{content:attr(data-tip);position:absolute;bottom:110%;left:50%;transform:translateX(-50%);background:#e6a000;color:#fff;padding:5px 10px;border-radius:6px;font-size:11px;pointer-events:none;opacity:0;transition:opacity .2s;z-index:999;max-width:280px;white-space:normal;min-width:180px;line-height:1.4}
-.g-warn:hover::after{opacity:1}
-.err-count-badge{display:inline-block;background:#c00;color:#fff;border-radius:50%;width:18px;height:18px;text-align:center;line-height:18px;font-size:10px;font-weight:700;margin-left:4px}
-.err-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:2px solid #c00;border-radius:12px;padding:20px 24px;z-index:9999;min-width:360px;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,.18)}
-.err-popup h3{color:#c00;font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.err-popup ul{list-style:none;padding:0;margin:0}
-.err-popup li{padding:6px 0;border-bottom:1px solid #f5c6cb;font-size:12px;color:#333;display:flex;align-items:flex-start;gap:8px}
-.err-popup li:last-child{border-bottom:none}
-.err-popup .err-icon{color:#c00;font-weight:700;min-width:14px}
-.err-popup .warn-icon{color:#e6a000;font-weight:700;min-width:14px}
-.err-popup .err-btn{margin-top:14px;width:100%;padding:8px;background:#1F4E79;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500;font-family:inherit}
-.overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.3);z-index:9998}
-.db-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:4px}
-.db-card{border:1px solid #d0d9e8;border-radius:8px;overflow:hidden}
-.db-card-hdr{background:#1F4E79;color:#fff;padding:7px 12px;font-weight:700;font-size:12px}
-.db-card table{width:100%;border-collapse:collapse;font-size:12px}
-.db-card td{padding:5px 10px;border-bottom:1px solid #e5ecf5}
-.db-card tr:last-child td{border-bottom:none}
-.db-card tr:nth-child(even) td{background:#f8fafd}
-@media print{
-  .topbar-left,.tab-bar,.setting-row,.btn,.btn-add,.btn-del,.notice,.info-box,#tab-input,#tab-pitchdb{display:none!important}
-  .tab-content{border:none;padding:0}
-  #tab-result{display:block!important}
-  body{background:#fff}
-  .result-block{break-inside:avoid}
-}
-</style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>LM 가이드 레일 절단 최적화 v7</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:#f1f5f9;}
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button{opacity:1;}
+    @media print{
+      .no-print{display:none!important;}
+      body{background:white;}
+    }
+  </style>
 </head>
 <body>
-<div class="topbar">
-  <div class="topbar-left">
-    <h1>LM 가이드 레일 절단 최적화 v3</h1>
-    <div class="sub">HSR · SR · SHS · SRS 전 계열 | 규격별 피치 자동 표시 | FFD 알고리즘</div>
-  </div>
-  <div style="font-size:11px;opacity:.7;text-align:right">베어링 유통 · 절단 작업지시서 자동 생성<br>대구·경북</div>
-</div>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef } = React;
 
-<div class="container">
-<div class="tab-bar">
-  <button class="tab active" onclick="switchTab('input',this)">① 입력</button>
-  <button class="tab" onclick="switchTab('result',this)">② 결과 / 작업지시서</button>
-  <button class="tab" onclick="switchTab('pitchdb',this)">피치 DB</button>
-</div>
-
-<!-- ① 입력 -->
-<div id="tab-input" class="tab-content active">
-
-<div class="section">
-  <div class="sec-title">기본 설정</div>
-  <div class="setting-row">
-    <div class="setting-item"><label>절단 날 손실 (kerf)</label><input type="number" id="kerf" value="1" min="0" max="10"> mm</div>
-    <div class="setting-item"><label>최소 재사용 잔재</label><input type="number" id="minReuse" value="160" min="0"> mm 이상</div>
-    <div class="setting-item"><label>작업번호</label><input type="text" id="jobNo" placeholder="JOB-2026-001" style="width:130px"></div>
-    <div class="setting-item"><label>작업일</label><input type="text" id="jobDate" placeholder="2026-03-18" style="width:110px"></div>
-    <div class="setting-item"><label>담당자</label><input type="text" id="person" style="width:80px"></div>
-    <div class="setting-item"><label>거래처</label><input type="text" id="client" style="width:130px"></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="sec-title">원자재 투입 정보 <span class="badge">최대 10종</span></div>
-  <div class="info-box">계열·번호 선택 → 피치 자동 표시 (참고용) | G값은 직접 입력 | 유효길이 = 원자재길이 − 앞G − 뒤G 자동계산</div>
-  <table class="inp">
-    <thead><tr>
-      <th style="width:32px">No</th>
-      <th style="width:75px">계열</th>
-      <th style="width:130px">번호</th>
-      <th>입고 규격 표기</th>
-      <th style="width:95px">원자재길이(mm)</th>
-      <th style="width:65px">피치(참고)</th>
-      <th style="width:70px">앞G값(mm)</th>
-      <th style="width:70px">뒤G값(mm)</th>
-      <th style="width:85px">유효길이(자동)</th>
-      <th style="width:40px">삭제</th>
-    </tr></thead>
-    <tbody id="stockBody"></tbody>
-  </table>
-  <div class="flex mt8"><button class="btn btn-add btn-sm" onclick="addStock()">+ 원자재 추가</button></div>
-</div>
-
-<div class="section">
-  <div class="sec-title">절단 요구 목록 <span class="badge">최대 30종</span></div>
-  <div class="info-box">계열·번호 선택 → 피치 자동 표시 (참고용) | 절단길이·마진 직접 입력 | 실물길이 = 절단길이 − kerf 자동계산</div>
-  <table class="inp">
-    <thead><tr>
-      <th style="width:32px">No</th>
-      <th style="width:75px">계열</th>
-      <th style="width:130px">번호</th>
-      <th style="width:95px">절단길이(mm)</th>
-      <th style="width:70px">앞G값(mm)</th>
-      <th style="width:70px">뒤G값(mm)</th>
-      <th style="width:80px">필요수량(EA)</th>
-      <th>참조 원자재 규격</th>
-      <th style="width:85px">실물길이(자동)</th>
-      <th style="width:40px">삭제</th>
-    </tr></thead>
-    <tbody id="cutBody"></tbody>
-  </table>
-  <div class="flex mt8"><button class="btn btn-add btn-sm" onclick="addCut()">+ 절단 추가</button></div>
-</div>
-
-<div class="flex flex-end mt8">
-  <button class="btn btn-primary" onclick="runOptimize()">최적화 실행 →</button>
-</div>
-</div><!-- tab-input -->
-
-<!-- ② 결과 -->
-<div id="tab-result" class="tab-content">
-  <div class="flex flex-end" style="margin-bottom:12px">
-    <button class="btn btn-sm" onclick="window.print()">🖨 인쇄</button>
-  </div>
-  <div id="results"><div class="empty">← 입력 탭에서 데이터 입력 후 [최적화 실행]을 눌러주세요</div></div>
-</div>
-
-<!-- 피치 DB -->
-<div id="tab-pitchdb" class="tab-content">
-  <div class="sec-title">규격별 피치 기준표</div>
-  <div class="notice">피치 = 볼트 홀 간격(mm) | G값은 별도 직접 입력 | 피치는 절단길이 계산 참고용</div>
-  <div class="db-grid" id="pitchDbGrid"></div>
-</div>
-
-</div><!-- container -->
-
-<script>
-// ══ 피치 DB (정확한 규격별 피치) ══════════════
+// ── 피치 DB ──────────────────────────────────────────────
 const PITCH_DB = {
-  // HSR
-  "HSR15":60,"HSR20":60,"HSR25":60,
-  "HSR30":80,"HSR35":80,
-  "HSR45":105,
-  // SR
-  "SR15":60,"SR20":60,"SR25":60,
-  "SR30":80,
-  // SHS (HSR과 동일)
-  "SHS15":60,"SHS20":60,"SHS25":60,
-  "SHS30":80,"SHS35":80,
-  "SHS45":105,
-  // SRS
-  "SRS9":20,"SRS12":25,"SRS15":40,
-  "SRS9W":30,"SRS12W":40,"SRS15W":40,
+  HSR:  { 15:60,20:60,25:60,30:80,35:80,45:105,55:120,65:150 },
+  SR:   { 15:60,20:60,25:60,30:80,35:80 },
+  SHS:  { 15:60,20:60,25:60,30:80,35:80,45:105,55:120 },
+  SRS:  { 9:20,12:25,15:40 },
+  SRSW: { '9W':30,'12W':40,'15W':40 },
 };
-
-const MODEL_OPTIONS = {
-  HSR: ["15","20","25","30","35","45"],
-  SR:  ["15","20","25","30"],
-  SHS: ["15","20","25","30","35","45"],
-  SRS: ["9","12","15","9W","12W","15W"],
+const SPEC_NUMS = {
+  HSR: [15,20,25,30,35,45,55,65],
+  SR:  [15,20,25,30,35],
+  SHS: [15,20,25,30,35,45,55],
+  SRS: [9,12,15],
+  SRSW:['9W','12W','15W'],
 };
+const SERIES_COLORS = { HSR:'#0369a1',SR:'#0891b2',SHS:'#0d9488',SRS:'#6d28d9',SRSW:'#9333ea' };
 
-const FAMILIES = ["HSR","SR","SHS","SRS"];
-
-function getPitch(family, num){
-  const key = family + num;
-  return PITCH_DB[key] || null;
-}
-
-function pitchBadgeHtml(pitch){
-  if(!pitch) return '<span style="color:#aaa;font-size:11px">-</span>';
-  const cls = {20:'p20',25:'p25',30:'p30',40:'p40',60:'p60',80:'p80',105:'p105'}[pitch]||'p60';
-  return `<span class="pitch-badge ${cls}">${pitch}mm</span>`;
-}
-
-// 피치 DB 카드 렌더
-function renderPitchDb(){
-  const grid = document.getElementById('pitchDbGrid');
-  const families = {
-    HSR: {nums:["15","20","25","30","35","45"]},
-    SR:  {nums:["15","20","25","30"]},
-    SHS: {nums:["15","20","25","30","35","45"]},
-    SRS: {nums:["9","9W","12","12W","15","15W"]},
-  };
-  let html='';
-  for(const [fam, data] of Object.entries(families)){
-    html+=`<div class="db-card">
-      <div class="db-card-hdr">${fam} 계열</div>
-      <table><tbody>`;
-    data.nums.forEach(n=>{
-      const pitch=getPitch(fam,n);
-      html+=`<tr>
-        <td><b>${fam}${n}</b></td>
-        <td>${pitchBadgeHtml(pitch)}</td>
-        <td style="color:#666;font-size:11px">피치 ${pitch||'?'}mm</td>
-      </tr>`;
-    });
-    html+=`</tbody></table></div>`;
-  }
-  grid.innerHTML=html;
-}
-
-const CUT_COLORS=[
-  ["#4472C4","#fff"],["#ED7D31","#fff"],["#70AD47","#fff"],["#C00000","#fff"],
-  ["#7030A0","#fff"],["#00B0F0","#111"],["#FFC000","#111"],["#FF6699","#111"],
-  ["#00B050","#fff"],["#833C00","#fff"]
-];
-const WASTE_REUSE_BG="#fff9c0"; const WASTE_NO_BG="#e0e0e0";
-
-let stocks=[], cuts=[];
-
-const sampleStocks=[
-  {family:"SRS",num:"12W",label:"SRS12W-1600L(15/25)",len:1600,gf:15,gr:25}
-];
-const sampleCuts=[
-  {family:"SRS",num:"12W",len:160,gf:10,gr:30,qty:24,ref:"SRS12W-1600L(15/25)"},
-  {family:"SRS",num:"12W",len:165,gf:10,gr:35,qty:32,ref:"SRS12W-1600L(15/25)"},
-  {family:"SRS",num:"12W",len:240,gf:10,gr:30,qty:40,ref:"SRS12W-1600L(15/25)"},
-  {family:"SRS",num:"12W",len:355,gf:20,gr:15,qty:32,ref:"SRS12W-1600L(15/25)"},
-  {family:"SRS",num:"12W",len:485,gf:15,gr:30,qty:20,ref:"SRS12W-1600L(15/25)"}
+// 절단 요구별 색상 팔레트
+const PALETTE = [
+  '#2563eb','#dc2626','#7c3aed','#0891b2',
+  '#d97706','#059669','#ea580c','#db2777',
+  '#4f46e5','#0f766e','#65a30d','#9333ea',
 ];
 
-function init(){
-  sampleStocks.forEach(s=>stocks.push({...s}));
-  sampleCuts.forEach(c=>cuts.push({...c}));
-  renderStocks(); renderCuts(); renderPitchDb();
-}
+const uid  = () => Math.random().toString(36).slice(2,8);
+const today= () => new Date().toISOString().slice(0,10).replace(/-/g,'');
+const n    = v => parseFloat(v)||0;
+const ni   = v => parseInt(v)||0;
+const MAX_CUT = 50;
 
-function getKerf(){ return parseInt(document.getElementById('kerf').value)||1; }
-
-function famNumSelect(arr, i, type){
-  const item = arr[i];
-  const famOpts = FAMILIES.map(f=>`<option value="${f}"${item.family===f?' selected':''}>${f}</option>`).join('');
-  const nums = MODEL_OPTIONS[item.family]||[];
-  const numOpts = `<option value="">선택</option>` + nums.map(n=>`<option value="${n}"${item.num===n?' selected':''}>${n}</option>`).join('');
-  const famSel = `<select onchange="${type}[${i}].family=this.value;${type}[${i}].num='';render${type==='stocks'?'Stocks':'Cuts'}()">${famOpts}</select>`;
-  const numSel = `<select onchange="${type}[${i}].num=this.value;render${type==='stocks'?'Stocks':'Cuts'}()">${numOpts}</select>`;
-  return {famSel, numSel};
-}
-
-function renderStocks(){
-  const tb=document.getElementById('stockBody');
-  tb.innerHTML=stocks.map((s,i)=>{
-    const eff=(s.len&&s.gf!==undefined&&s.gr!==undefined)?(s.len-s.gf-s.gr):'';
-    const pitch=getPitch(s.family,s.num);
-    const {famSel,numSel}=famNumSelect(stocks,i,'stocks');
-    return `<tr>
-      <td>${i+1}</td>
-      <td>${famSel}</td>
-      <td>${numSel}</td>
-      <td><input value="${s.label||''}" onchange="stocks[${i}].label=this.value;renderCuts()" style="text-align:left"></td>
-      <td><input type="number" value="${s.len||''}" onchange="stocks[${i}].len=+this.value;renderStocks()"></td>
-      <td>${pitchBadgeHtml(pitch)}</td>
-      <td><input type="number" value="${s.gf!==undefined?s.gf:''}" onchange="stocks[${i}].gf=+this.value;renderStocks()"></td>
-      <td><input type="number" value="${s.gr!==undefined?s.gr:''}" onchange="stocks[${i}].gr=+this.value;renderStocks()"></td>
-      <td class="auto-cell">${eff!==''?eff+'mm':''}</td>
-      <td><button class="btn btn-del btn-sm" onclick="delStock(${i})">×</button></td>
-    </tr>`;
-  }).join('');
-}
-
-function renderCuts(){
-  const kerf=getKerf();
-  const refs=stocks.map(s=>s.label).filter(Boolean);
-  const tb=document.getElementById('cutBody');
-  tb.innerHTML=cuts.map((c,i)=>{
-    const real=c.len?(c.len-kerf):'';
-    const pitch=getPitch(c.family,c.num);
-    const {famSel,numSel}=famNumSelect(cuts,i,'cuts');
-    const refOpts=`<option value="">선택</option>`+refs.map(r=>`<option value="${r}"${c.ref===r?' selected':''}>${r}</option>`).join('');
-    return `<tr>
-      <td>${i+1}</td>
-      <td>${famSel}</td>
-      <td>${numSel}</td>
-      <td><input type="number" value="${c.len||''}" onchange="cuts[${i}].len=+this.value;renderCuts()"></td>
-      <td><input type="number" value="${c.gf!==undefined?c.gf:''}" onchange="cuts[${i}].gf=+this.value"></td>
-      <td><input type="number" value="${c.gr!==undefined?c.gr:''}" onchange="cuts[${i}].gr=+this.value"></td>
-      <td><input type="number" value="${c.qty||''}" onchange="cuts[${i}].qty=+this.value"></td>
-      <td><select onchange="cuts[${i}].ref=this.value">${refOpts}</select></td>
-      <td class="auto-cell">${real!==''?real+'mm':''}</td>
-      <td><button class="btn btn-del btn-sm" onclick="delCut(${i})">×</button></td>
-    </tr>`;
-  }).join('');
-}
-
-function addStock(){
-  stocks.push({family:'HSR',num:'',label:'',len:'',gf:'',gr:''});
-  renderStocks(); renderCuts();
-}
-function delStock(i){stocks.splice(i,1);renderStocks();renderCuts();}
-function addCut(){
-  cuts.push({family:'HSR',num:'',len:'',gf:'',gr:'',qty:'',ref:stocks[0]?stocks[0].label:''});
-  renderCuts();
-}
-function delCut(i){cuts.splice(i,1);renderCuts();}
-
-function switchTab(name,el){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('tab-'+name).classList.add('active');
-}
-
-function ffd(effLen,pieces,kerf){
-  const sorted=[...pieces].sort((a,b)=>b[0]-a[0]);
-  const bins=[];
-  for(const p of sorted){
-    let ok=false;
-    for(const b of bins){
-      const used=b.reduce((s,x)=>s+x[0],0)+kerf*b.length;
-      if(effLen-used>=p[0]+kerf){b.push(p);ok=true;break;}
-    }
-    if(!ok) bins.push([p]);
+// ── G값 피치 검증 ────────────────────────────────────────
+// 반환: null(피치DB없음) | {ok,holes,pitch,suggestions?}
+function validateG(series, number, cutLength, frontG, backG) {
+  const pitch = PITCH_DB[series]?.[number];
+  if (!pitch || !cutLength) return null;
+  const cL=n(cutLength), fG=n(frontG), bG=n(backG);
+  const net = cL - fG - bG;
+  if (net <= 0) return { ok:false, pitch, error:'G값 합이 절단길이 초과', suggestions:[] };
+  const exactHoles = net / pitch;
+  const roundH = Math.round(exactHoles);
+  // 0.5mm 이하 오차면 OK
+  if (Math.abs(net - roundH * pitch) <= 0.5) {
+    return { ok:true, pitch, holes:roundH };
   }
-  return bins;
-}
-function cw(effLen,b,kerf){return effLen-b.reduce((s,p)=>s+p[0],0)-kerf*b.length;}
-function bsig(b){return[...b].map(p=>p[0]).sort((a,b)=>b-a).join(',');}
-
-function doOptimize(){
-  const kerf=getKerf();
-  const minReuse=parseInt(document.getElementById('minReuse').value)||160;
-  const vS=stocks.filter(s=>s.len&&s.label);
-  const vC=cuts.filter(c=>c.len&&c.qty&&c.ref);
-  if(!vS.length||!vC.length){alert('원자재와 절단 요구를 입력해주세요.');return;}
-
-  const uniqL=[...new Set(vC.map(c=>String(c.len)))];
-  const cmap={};
-  uniqL.forEach((l,i)=>cmap[l]=CUT_COLORS[i%CUT_COLORS.length]);
-
-  const results=[];
-  for(const s of vS){
-    const eff=s.len-s.gf-s.gr;
-    const mc=vC.filter(c=>c.ref===s.label);
-    if(!mc.length) continue;
-    const pieces=[];
-    mc.forEach(c=>{for(let q=0;q<c.qty;q++) pieces.push([c.len,`${c.family}${c.num}-${c.len}L`]);});
-    const bins=ffd(eff,pieces,kerf);
-    const tw=bins.reduce((s,b)=>s+cw(eff,b,kerf),0);
-    const us=bins.reduce((s,b)=>{const w=cw(eff,b,kerf);return s+(w>=minReuse?w:0);},0);
-    const eff2=(eff*bins.length-tw)/(eff*bins.length)*100;
-    const prod={};
-    bins.forEach(b=>b.forEach(([l,lb])=>prod[lb]=(prod[lb]||0)+1));
-    results.push({s,eff,bins,tw,us,eff2,prod,cuts:mc});
+  // 오류: 전후 홀수 기준 대칭 G값 제안
+  const suggestions = [];
+  for (const h of [Math.floor(exactHoles), Math.ceil(exactHoles)]) {
+    if (h < 1) continue;
+    const rem = cL - h * pitch;
+    if (rem < 0) continue;
+    const gSym = rem / 2;
+    suggestions.push({ holes:h, gSym:gSym.toFixed(1) });
   }
-
-  renderResults(results,cmap,kerf,minReuse);
-  switchTab('result',document.querySelectorAll('.tab')[1]);
+  return { ok:false, pitch, holes:exactHoles.toFixed(2), net:net.toFixed(1), suggestions };
 }
 
-// ══ G값 유효성 검증 ══════════════════════════════
-// 규칙: 절단길이 L, 피치 P, 앞G값 gf, 뒤G값 gr
-// 유효조건: (L - gf - gr) % P === 0  (오차 ±1mm 허용)
-//           gf > 0, gf <= P
-//           gr > 0, gr <= P
-function validateGValue(len, gf, gr, pitch){
-  const errors = [];
-  if(!pitch || !len) return errors;
-  const L = parseFloat(len)||0;
-  const GF = parseFloat(gf)||0;
-  const GR = parseFloat(gr)||0;
-  const P = parseFloat(pitch)||0;
-  if(L<=0 || P<=0) return errors;
-  if(GF <= 0){
-    errors.push({field:'gf', msg:`앞G값은 0보다 커야 합니다`});
-    return errors;
-  }
-  if(GR <= 0){
-    errors.push({field:'gr', msg:`뒤G값은 0보다 커야 합니다`});
-    return errors;
-  }
-  // 앞G값 범위: 0 < gf <= 피치
-  if(GF > P){
-    errors.push({field:'gf', msg:`앞G값(${GF}mm)이 피치(${P}mm)를 초과합니다. 앞G값은 피치 이하여야 합니다`});
-  }
-  if(GR > P){
-    errors.push({field:'gr', msg:`뒤G값(${GR}mm)이 피치(${P}mm)를 초과합니다. 뒤G값은 피치 이하여야 합니다`});
-  }
-  // 핵심 검증: (L - gf - gr) 가 피치의 배수여야 함 (±1mm 오차 허용)
-  const inner = L - GF - GR;
-  if(inner < 0){
-    errors.push({field:'both', msg:`앞G값(${GF})+뒤G값(${GR}) > 절단길이(${L}mm) — 불가능한 조합`});
-    return errors;
-  }
-  const remainder = inner % P;
-  const tolerance = 1;
-  if(remainder > tolerance && remainder < P - tolerance){
-    // 올바른 뒤G값 계산해서 안내
-    const n = Math.floor(inner / P);
-    const correctGR1 = L - GF - n*P;       // n개 피치
-    const correctGR2 = L - GF - (n+1)*P;   // n+1개 피치 (음수 가능)
-    let hint = `피치 ${P}mm 기준 — `;
-    if(correctGR1 > 0 && correctGR1 <= P) hint += `뒤G값 ${correctGR1}mm`;
-    else if(correctGR2 > 0 && correctGR2 <= P) hint += `뒤G값 ${correctGR2}mm`;
-    else hint += `앞G값 또는 절단길이 재확인 필요`;
-    errors.push({field:'gr', msg:`뒤G값(${GR}mm)이 피치(${P}mm)와 맞지 않습니다. ${hint}`});
-  }
-  return errors;
-}
-
-function applyGValidationStyles(){
-  cuts.forEach((c,i)=>{
-    const tr = document.querySelectorAll('#cutBody tr')[i];
-    if(!tr || !c.len) return;
-    const pitch = getPitch(c.family, c.num);
-    const tdGf = tr.cells[4];
-    const tdGr = tr.cells[5];
-    // 초기화
-    if(tdGf){tdGf.classList.remove('g-err','g-warn');tdGf.removeAttribute('data-tip');}
-    if(tdGr){tdGr.classList.remove('g-err','g-warn');tdGr.removeAttribute('data-tip');}
-    if(!pitch) return;
-    const gErrs = validateGValue(c.len, c.gf, c.gr, pitch);
-    gErrs.forEach(e=>{
-      if((e.field==='gf'||e.field==='both') && tdGf){
-        tdGf.classList.add('g-err');
-        tdGf.setAttribute('data-tip', e.msg);
-      }
-      if((e.field==='gr'||e.field==='both') && tdGr){
-        tdGr.classList.add('g-err');
-        tdGr.setAttribute('data-tip', e.msg);
-      }
-    });
-  });
-}
-
-// ══ 검증 함수 ══════════════════════════════════
-function validateAll(){
-  const kerf = getKerf();
-  const errors = [];
-  const warnings = [];
-
-  // G값 검증 포함
-  cuts.forEach((c,i)=>{
-    if(!c.len || !c.qty) return;
-    const pitch = getPitch(c.family, c.num);
-    if(pitch && c.gf !== '' && c.gr !== ''){
-      const gErrs = validateGValue(c.len, c.gf, c.gr, pitch);
-      gErrs.forEach(e=>{
-        errors.push({row:i, type:'err', msg:`절단요구 ${i+1}번 G값 오류: ${e.msg}`});
-      });
+// ── FFD 최적화 ───────────────────────────────────────────
+function optimize(rawMats, cutReqs, kerf, minRemainder, stdLength) {
+  const k=n(kerf), stdL=n(stdLength)||3000;
+  const cuts=[];
+  cutReqs.forEach((req,ri)=>{
+    for(let p=0;p<(ni(req.qty)||1);p++){
+      cuts.push({...req,cutLen:n(req.cutLength),reqIdx:ri,piece:p+1,
+        specKey:`${req.series}${req.number}`});
     }
   });
+  cuts.sort((a,b)=>b.cutLen-a.cutLen);
 
-  // 절단요구 검증
-  cuts.forEach((c,i)=>{
-    if(!c.len || !c.qty) return;
-    const row = i;
-    const gf = parseFloat(c.gf)||0;
-    const gr = parseFloat(c.gr)||0;
-    const len = parseFloat(c.len)||0;
+  const bins=rawMats.map(rm=>{
+    const eff=n(rm.length)-n(rm.frontG)-n(rm.backG);
+    return{...rm,id:rm.id||uid(),effectiveLength:eff,remaining:eff,
+      assignments:[],specKey:`${rm.series}${rm.number}`,autoAdded:false};
+  });
+  const tooLong=[];
 
-    // 오류1: 앞마진+뒤마진 > 절단길이
-    if(gf+gr >= len){
-      errors.push({row:i, type:'err', msg:`절단요구 ${i+1}번: 앞마진(${gf})+뒤마진(${gr}) = ${gf+gr}mm ≥ 절단길이(${len}mm) — 마진이 너무 큽니다`});
-    }
-
-
-
-    // 오류2: 절단길이 > 참조 원자재 유효길이
-    if(c.ref){
-      const s = stocks.find(s=>s.label===c.ref);
-      if(s && s.len && s.gf!==undefined && s.gr!==undefined){
-        const eff = s.len - s.gf - s.gr;
-        if(len > eff){
-          errors.push({row:i, type:'err', msg:`절단요구 ${i+1}번: 절단길이(${len}mm) > 원자재 유효길이(${eff}mm) — 잘라낼 수 없습니다`});
-        }
+  cuts.forEach(cut=>{
+    const need=cut.cutLen+k;
+    let assigned=false;
+    for(const bin of bins){
+      if(bin.specKey!==cut.specKey) continue;
+      if(bin.remaining>=need-0.001){
+        bin.assignments.push({...cut,need});
+        bin.remaining=Math.max(0,bin.remaining-need);
+        assigned=true; break;
       }
     }
-  });
-
-  // 원자재 검증
-  stocks.forEach((s,i)=>{
-    if(!s.len) return;
-    const gf = parseFloat(s.gf)||0;
-    const gr = parseFloat(s.gr)||0;
-    const len = parseFloat(s.len)||0;
-    if(gf+gr >= len){
-      errors.push({row:-1, type:'err', msg:`원자재 ${i+1}번(${s.label||'미입력'}): 앞G(${gf})+뒤G(${gr}) ≥ 원자재길이(${len}mm) — 유효길이가 0 이하`});
+    if(!assigned){
+      if(need>stdL){tooLong.push(cut);return;}
+      const nb={id:uid(),series:cut.series,number:cut.number,
+        length:stdL,frontG:0,backG:0,effectiveLength:stdL,
+        remaining:stdL-need,assignments:[{...cut,need}],
+        specKey:cut.specKey,autoAdded:true};
+      bins.push(nb);
     }
   });
-
-  return {errors, warnings};
+  return{bins,tooLong};
 }
 
-function applyValidationStyles(){
-  applyGValidationStyles();
-
-  const kerf = getKerf();
-  // 기존 스타일 초기화
-  document.querySelectorAll('#cutBody tr td').forEach(td=>{
-    td.classList.remove('err-cell','warn-cell','valid-cell');
+// 동일 패턴 그룹핑
+function groupPatterns(bins){
+  const groups=[];
+  bins.forEach(bin=>{
+    const sig=`${bin.specKey}|${bin.length}|`+
+      bin.assignments.map(a=>`${a.series}${a.number}-${a.cutLen}-${a.frontG}-${a.backG}`).join('|');
+    const ex=groups.find(g=>g.sig===sig);
+    if(ex) ex.count++;
+    else groups.push({sig,bin,count:1,autoAdded:bin.autoAdded});
   });
+  return groups;
+}
 
-  cuts.forEach((c,i)=>{
-    if(!c.len || !c.qty) return;
-    const tr = document.querySelectorAll('#cutBody tr')[i];
-    if(!tr) return;
-    const gf = parseFloat(c.gf)||0;
-    const gr = parseFloat(c.gr)||0;
-    const len = parseFloat(c.len)||0;
-    const pitch = getPitch(c.family, c.num);
-    const minG = pitch ? pitch/2 : 0;
-
-    // 마진 셀 (4,5번째 td = 앞마진, 뒤마진)
-    const tdGf = tr.cells[4];
-    const tdGr = tr.cells[5];
-    const tdLen = tr.cells[3];
-
-    // 앞마진+뒤마진 > 절단길이
-    if(gf+gr >= len && len > 0){
-      if(tdGf) tdGf.classList.add('err-cell');
-      if(tdGr) tdGr.classList.add('err-cell');
-      if(tdLen) tdLen.classList.add('err-cell');
-    }
-
-    // 절단길이 > 유효길이
-    if(c.ref){
-      const s = stocks.find(s=>s.label===c.ref);
-      if(s && s.len){
-        const eff = s.len-(parseFloat(s.gf)||0)-(parseFloat(s.gr)||0);
-        if(len > eff && tdLen) tdLen.classList.add('err-cell');
-      }
-    }
+// 절단 요구별 색상 맵
+function buildColorMap(cutReqs){
+  const map={};
+  cutReqs.forEach((cr,i)=>{
+    const key=`${cr.series}${cr.number}-${cr.cutLength}`;
+    if(!map[key]) map[key]=PALETTE[Object.keys(map).length%PALETTE.length];
   });
+  return map;
 }
 
-function showErrPopup(errors, warnings){
-  document.querySelectorAll('.err-popup,.overlay').forEach(e=>e.remove());
-  if(!errors.length && !warnings.length) return true;
-
-  const overlay = document.createElement('div');
-  overlay.className='overlay';
-  overlay.onclick=closeErrPopup;
-  document.body.appendChild(overlay);
-
-  const popup = document.createElement('div');
-  popup.className='err-popup';
-  const allItems = [
-    ...errors.map(e=>`<li><span class="err-icon">✕</span><span><b style="color:#c00">[오류]</b> ${e.msg}</span></li>`),
-    ...warnings.map(w=>`<li><span class="warn-icon">⚠</span><span><b style="color:#e6a000">[경고]</b> ${w.msg}</span></li>`)
-  ].join('');
-  popup.innerHTML=`
-    <h3><span style="font-size:18px">⚠</span> 입력값 검토 필요 (오류 ${errors.length}건 / 경고 ${warnings.length}건)</h3>
-    <ul>${allItems}</ul>
-    <div style="font-size:11px;color:#888;margin-top:10px">※ 오류(빨간셀)는 반드시 수정 후 실행 | 경고(노란셀)는 확인 후 진행 가능</div>
-    ${errors.length ? '<button class="err-btn" onclick="closeErrPopup()">확인 후 수정하기</button>' : '<button class="err-btn" onclick="closeErrPopup();forceRun()">경고 무시하고 실행</button>'}
-  `;
-  document.body.appendChild(popup);
-  return false;
+// ── SpecGrid ─────────────────────────────────────────────
+function SpecGrid({selected,onSelect}){
+  return(
+    <div style={{background:'white',border:'1px solid #e2e8f0',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
+      {Object.entries(SPEC_NUMS).map(([series,nums])=>{
+        const col=SERIES_COLORS[series];
+        const isSel=selected.series===series;
+        return(
+          <div key={series} style={{display:'flex',alignItems:'center',marginBottom:4,gap:4}}>
+            <span style={{width:44,fontSize:11,fontWeight:800,color:isSel?col:'#94a3b8',fontFamily:'monospace',flexShrink:0}}>
+              {series}
+            </span>
+            <div style={{display:'flex',flexWrap:'wrap',gap:3}}>
+              {nums.map(num=>{
+                const sel=isSel&&String(selected.number)===String(num);
+                return(
+                  <button key={num} onClick={()=>onSelect(series,String(num))} style={{
+                    padding:'3px 9px',fontSize:12,fontWeight:sel?800:500,borderRadius:5,cursor:'pointer',
+                    border:sel?`2px solid ${col}`:'1.5px solid #e2e8f0',
+                    background:sel?col:'white',color:sel?'white':'#334155',
+                    boxShadow:sel?`0 1px 5px ${col}44`:'none',transition:'all 0.1s',
+                  }}>{num}</button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-function closeErrPopup(){
-  document.querySelectorAll('.err-popup,.overlay').forEach(e=>e.remove());
-}
+const inp=(w='80px',ex={})=>({border:'1.5px solid #e2e8f0',borderRadius:5,padding:'5px 7px',fontSize:13,width:w,boxSizing:'border-box',fontFamily:'monospace',outline:'none',...ex});
+const lbl={fontSize:11,fontWeight:700,color:'#64748b',marginBottom:3,display:'block',letterSpacing:'0.3px'};
+const Field=({label,children,w})=>(<div style={{width:w||'auto'}}><span style={lbl}>{label}</span>{children}</div>);
 
-let _pendingRun = null;
-function forceRun(){
-  closeErrPopup();
-  doOptimize();
-}
+// ── 인포그래픽 바 ────────────────────────────────────────
+function CutBar({bin,count,colorMap,kerf,minRemainder,patIdx}){
+  const eff=bin.effectiveLength;
+  const reusable=bin.remaining>=n(minRemainder);
+  const totalUsed=eff-bin.remaining;
+  const efficiency=eff>0?((totalUsed/eff)*100).toFixed(1):0;
 
-function runOptimize(){
-  applyValidationStyles();
-  const {errors,warnings} = validateAll();
-  if(errors.length){
-    showErrPopup(errors,warnings);
-    return;
-  }
-  if(warnings.length){
-    showErrPopup(errors,warnings);
-    return;
-  }
-  doOptimize();
-}
+  return(
+    <div style={{marginBottom:8,background:'white',borderRadius:8,
+      border:bin.autoAdded?'1.5px solid #fde68a':'1px solid #e2e8f0',overflow:'hidden'}}>
 
-function renderResults(results,cmap,kerf,minReuse){
-  const el=document.getElementById('results');
-  if(!results.length){el.innerHTML='<div class="empty">결과 없음</div>';return;}
-  let html=''; let aN=0,aP=0,aB=0,aW=0;
-
-  for(const res of results){
-    const{s,eff,bins,tw,us,eff2,prod,cuts}=res;
-    const pitch=getPitch(s.family,s.num);
-    const uniqL=[...new Set(cuts.map(c=>String(c.len)))];
-    const legend=uniqL.map(l=>{
-      const[bg,fg]=cmap[l]||["#888","#fff"];
-      const c=cuts.find(x=>String(x.len)===l);
-      return `<div class="legend-item"><div class="legend-swatch" style="background:${bg}"></div><span>${l}L (앞${c?c.gf:0}/뒤${c?c.gr:0})</span></div>`;
-    }).join('')+
-    `<div class="legend-item"><div class="legend-swatch" style="background:${WASTE_REUSE_BG};border:1px solid #c8b800"></div><span>★재사용가능</span></div>`+
-    `<div class="legend-item"><div class="legend-swatch" style="background:${WASTE_NO_BG};border:1px solid #bbb"></div><span>폐기잔재</span></div>`;
-
-    const grps=[];let i=0;
-    while(i<bins.length){let n=1;while(i+n<bins.length&&bsig(bins[i+n])===bsig(bins[i]))n++;grps.push({b:bins[i],n});i+=n;}
-
-    let patRows='';
-    grps.forEach((g,pi)=>{
-      const b=g.b; const wv=cw(eff,b,kerf); const um=eff-wv;
-      const isR=wv>=minReuse;
-      const sb=[...b].sort((a,b2)=>b2[0]-a[0]);
-      let segs=''; let sq=1;
-      sb.forEach(([pl])=>{
-        const pct=Math.max(2,(pl/eff*100)).toFixed(1);
-        const[bg,fg]=cmap[String(pl)]||["#888","#fff"];
-        segs+=`<div class="bar-seg" style="flex:${pct};background:${bg};color:${fg}">[${sq}]<br>${pl}L<br>실${pl-kerf}</div>`;sq++;
-      });
-      if(wv>0){const wp=Math.max(1,(wv/eff*100)).toFixed(1);segs+=`<div class="bar-seg ${isR?'waste-reuse':'waste-no'}" style="flex:${wp}">${wv}mm<br>${isR?'★보관':'폐기'}</div>`;}
-      const wBadge=wv===0?`<span style="color:#1a7a45;font-weight:700">없음</span>`
-        :(isR?`<span style="color:#7a6000;font-weight:700">★${wv}mm</span>`:`<span style="color:#c00">폐기${wv}mm</span>`);
-      patRows+=`<tr>
-        <td><span class="no-badge">${pi+1}</span></td>
-        <td><span class="rep-badge">${g.n}본</span></td>
-        <td style="padding:3px 5px"><div class="bar-wrap">${segs}</div></td>
-        <td>${um}</td><td>${wBadge}</td>
-      </tr>`;
-    });
-
-    let vrRows='';
-    cuts.forEach((c,ci)=>{
-      const lb=`${c.family}${c.num}-${c.len}L`;
-      const pr=prod[lb]||0; const df=pr-c.qty; const ok=df===0;
-      aN+=c.qty; aP+=pr;
-      vrRows+=`<tr>
-        <td>${ci+1}</td><td>${lb}</td>
-        <td>(${c.gf}/${c.gr})</td>
-        <td>${c.len}</td><td>${c.len-kerf}</td>
-        <td>${c.qty}</td><td>${pr}</td>
-        <td>${df===0?0:(df>0?'+'+df:df)}</td>
-        <td class="${ok?'ok':'ng'}">${ok?'✓ 정확':(df>0?'▲ 초과':'▼ 부족')}</td>
-      </tr>`;
-    });
-
-    aB+=bins.length; aW+=tw;
-    const ec=eff2>97?'#1a7a45':eff2>93?'#7a6000':'#c00028';
-
-    html+=`<div class="result-block">
-      <div class="model-hdr">■ ${s.family}${s.num} ${pitch?pitchBadgeHtml(pitch):''}　|　${s.label}　|　원자재 ${s.len}mm　|　유효 ${eff}mm　(앞G값=${s.gf} / 뒤G값=${s.gr})　|　${bins.length}본　|　효율 <span style="color:#7dffb8;font-weight:700">${eff2.toFixed(1)}%</span></div>
-      <div class="stats">
-        <div class="stat"><div class="stat-val">${bins.length}본</div><div class="stat-lbl">투입 원자재</div></div>
-        <div class="stat"><div class="stat-val" style="color:${ec}">${eff2.toFixed(1)}%</div><div class="stat-lbl">재료효율</div></div>
-        <div class="stat"><div class="stat-val">${tw}mm</div><div class="stat-lbl">총 잔재</div></div>
-        <div class="stat"><div class="stat-val" style="color:#1a7a45">${us}mm</div><div class="stat-lbl">재사용가능</div></div>
-        <div class="stat"><div class="stat-val">${grps.length}패턴</div><div class="stat-lbl">절단 패턴</div></div>
+      {/* 패턴 헤더 */}
+      <div style={{background:bin.autoAdded?'#fffbeb':'#0f172a',padding:'6px 12px',
+        display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <span style={{background:'#38bdf8',color:'#0f172a',fontWeight:800,fontSize:12,
+            borderRadius:4,padding:'1px 8px',fontFamily:'monospace'}}>
+            패턴 {patIdx+1}
+          </span>
+          <span style={{color:bin.autoAdded?'#92400e':'white',fontWeight:800,fontSize:12,fontFamily:'monospace'}}>
+            {count}본
+          </span>
+        </div>
+        <span style={{color:bin.autoAdded?'#78350f':'#94a3b8',fontSize:11,fontFamily:'monospace'}}>
+          ■ {bin.series}{bin.number} {bin.length}mm
+          {bin.frontG>0||bin.backG>0?` (앞G:${bin.frontG}/뒤G:${bin.backG})`:''}
+          &nbsp;|&nbsp;유효 {eff}mm
+        </span>
+        {bin.autoAdded&&(
+          <span style={{background:'#f59e0b',color:'white',fontSize:10,fontWeight:700,borderRadius:3,padding:'1px 6px'}}>
+            자동배정
+          </span>
+        )}
+        <div style={{marginLeft:'auto',display:'flex',gap:12,alignItems:'center'}}>
+          <span style={{color:bin.autoAdded?'#78350f':'#38bdf8',fontWeight:800,fontSize:13}}>
+            효율 {efficiency}%
+          </span>
+          <span style={{color:reusable?'#4ade80':'#f87171',fontWeight:700,fontSize:12}}>
+            {reusable?'★':''} 잔재 {bin.remaining.toFixed(0)}mm {reusable?'재사용':'폐기'}
+          </span>
+        </div>
       </div>
-      <div class="legend">색상 범례 ▶ ${legend}</div>
-      <table class="pattern-tbl">
-        <thead><tr>
-          <th style="width:42px">패턴No</th><th style="width:54px">반복(본)</th>
-          <th>절단 순서 — 왼쪽부터 순서대로 절단  ← ${eff}mm →</th>
-          <th style="width:65px">사용(mm)</th><th style="width:90px">잔재</th>
-        </tr></thead>
-        <tbody>${patRows}</tbody>
-      </table>
-      <div style="margin-top:14px;font-size:11px;font-weight:700;color:#2E75B6;margin-bottom:4px">[ 수량 검증 — 정확 절단 확인 ]</div>
-      <table class="verify-tbl">
-        <thead><tr><th>No</th><th>규격</th><th>G값(앞/뒤)</th><th>절단길이</th><th>실물길이</th><th>필요수량</th><th>생산수량</th><th>차이</th><th>상태</th></tr></thead>
-        <tbody>${vrRows}</tbody>
-      </table>
-    </div>`;
-  }
 
-  const allOk=aN===aP;
-  html+=`<div class="summary-box">
-    <div style="font-size:12px;font-weight:700;color:#1F4E79;margin-bottom:6px">▶ 합계　총 ${aB}본 | 총 잔재 ${aW}mm | 필요 ${aN}개 | 생산 ${aP}개 | ${allOk?'✓ 전품목 정확':'▲ 수량 확인 필요'}</div>
-    <div style="font-size:11px;color:#5a6a80">작업번호: ${document.getElementById('jobNo').value||'-'}　|　작업일: ${document.getElementById('jobDate').value||'-'}　|　담당자: ${document.getElementById('person').value||'-'}　|　거래처: ${document.getElementById('client').value||'-'}</div>
-  </div>`;
-  el.innerHTML=html;
+      {/* 비주얼 바 */}
+      <div style={{padding:'10px 12px'}}>
+        <div style={{position:'relative',width:'100%',height:52,
+          display:'flex',borderRadius:5,overflow:'hidden',
+          boxShadow:'0 1px 4px rgba(0,0,0,0.08)'}}>
+          {bin.assignments.map((a,j)=>{
+            const ck=`${a.series}${a.number}-${a.cutLen}`;
+            const col=colorMap[ck]||'#94a3b8';
+            const segPct=(a.need/eff)*100;
+            const actualLen=a.cutLen-n(kerf);
+            return(
+              <div key={j} style={{
+                width:`${segPct}%`,flexShrink:0,background:col,
+                borderRight:'1.5px solid rgba(255,255,255,0.4)',
+                display:'flex',flexDirection:'column',alignItems:'center',
+                justifyContent:'center',overflow:'hidden',cursor:'default',
+                position:'relative',
+              }}
+                title={`[${j+1}] ${a.series}${a.number} 절단:${a.cutLen}mm 실물:${actualLen}mm`}>
+                <span style={{fontSize:10,color:'rgba(255,255,255,0.8)',lineHeight:1,marginBottom:1}}>
+                  [{j+1}]
+                </span>
+                <span style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.1,
+                  textAlign:'center',padding:'0 2px',whiteSpace:'nowrap',overflow:'hidden',
+                  textOverflow:'ellipsis',maxWidth:'100%'}}>
+                  {a.series}{a.number}
+                </span>
+                <span style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1,marginTop:1}}>
+                  실{actualLen}
+                </span>
+              </div>
+            );
+          })}
+          {/* 잔재 */}
+          {bin.remaining>0&&(
+            <div style={{
+              flex:1,minWidth:20,
+              background:reusable?'#fef9c3':'#f1f5f9',
+              display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+              borderLeft:'1px dashed #cbd5e1',
+            }}>
+              <span style={{fontSize:10,color:reusable?'#92400e':'#94a3b8',
+                fontWeight:700,whiteSpace:'nowrap'}}>
+                {reusable?'★':''}{bin.remaining.toFixed(0)}
+              </span>
+              <span style={{fontSize:9,color:reusable?'#b45309':'#94a3b8'}}>
+                {reusable?'보관':'폐기'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* 절단 번호 레이블 아래 */}
+        <div style={{display:'flex',marginTop:4,gap:0}}>
+          {bin.assignments.map((a,j)=>{
+            const segPct=(a.need/eff)*100;
+            return(
+              <div key={j} style={{width:`${segPct}%`,flexShrink:0,
+                textAlign:'center',fontSize:9,color:'#64748b',overflow:'hidden'}}>
+                {a.cutLen}L
+              </div>
+            );
+          })}
+          {bin.remaining>0&&(
+            <div style={{flex:1,textAlign:'center',fontSize:9,color:'#94a3b8'}}>
+              {bin.remaining.toFixed(0)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 사용량 바 (미니) */}
+      <div style={{height:5,background:'#f1f5f9',display:'flex'}}>
+        <div style={{width:`${Math.min(100,parseFloat(efficiency))}%`,
+          background: parseFloat(efficiency)>=90?'#22c55e':parseFloat(efficiency)>=75?'#f59e0b':'#ef4444',
+          transition:'width 0.3s'}}/>
+      </div>
+    </div>
+  );
 }
 
-document.getElementById('kerf').addEventListener('change',()=>{renderStocks();renderCuts();setTimeout(applyValidationStyles,50);});
-// 입력값 변경 시 실시간 검증 (딜레이 적용)
-let _valTimer=null;
-document.getElementById('cutBody').addEventListener('input',()=>{
-  clearTimeout(_valTimer);
-  _valTimer=setTimeout(applyValidationStyles,300);
-});
-document.getElementById('stockBody').addEventListener('input',()=>{
-  clearTimeout(_valTimer);
-  _valTimer=setTimeout(applyValidationStyles,300);
-});
-init();
-</script>
+// ── 메인 ─────────────────────────────────────────────────
+function App(){
+  const [tab,setTab]=useState('input');
+  const [settings,setSettings]=useState({
+    kerf:'3',minRemainder:'100',stdLength:'3000',
+    workNo:'',workDate:today(),worker:'',customer:'',
+  });
+  const [rawMats,setRawMats]=useState([]);
+  const [cutReqs,setCutReqs]=useState([]);
+  const [results,setResults]=useState(null);
+  const [colorMap,setColorMap]=useState({});
+
+  const [rmIn,setRmIn]=useState({series:'',number:'',length:'',frontG:'0',backG:'0'});
+  const [crIn,setCrIn]=useState({series:'',number:'',cutLength:'',frontG:'0',backG:'0',qty:'1'});
+
+  const rmLenRef=useRef(); const rmFGRef=useRef(); const rmBGRef=useRef();
+  const crLenRef=useRef(); const crFGRef=useRef(); const crBGRef=useRef(); const crQtyRef=useRef();
+
+  const setSetting=(k,v)=>setSettings(s=>({...s,[k]:v}));
+  const effLen=rm=>{const v=n(rm.length)-n(rm.frontG)-n(rm.backG);return v>0?v:'-';};
+  const physLen=cutLen=>Math.max(0,n(cutLen)-n(settings.kerf));
+
+  const canRM=rmIn.series&&rmIn.number&&rmIn.length;
+  const selectRM=(series,number)=>{
+    setRmIn(p=>({...p,series,number}));
+    setTimeout(()=>{rmLenRef.current?.focus();rmLenRef.current?.select();},30);
+  };
+  const addRM=()=>{
+    if(!canRM) return;
+    setRawMats(p=>[...p,{id:uid(),...rmIn}]);
+    setRmIn({series:'',number:'',length:'',frontG:rmIn.frontG,backG:rmIn.backG});
+  };
+
+  const canCR=crIn.series&&crIn.number&&crIn.cutLength;
+  const selectCR=(series,number)=>{
+    setCrIn(p=>({...p,series,number}));
+    setTimeout(()=>{crLenRef.current?.focus();crLenRef.current?.select();},30);
+  };
+  const addCR=()=>{
+    if(!canCR) return;
+    if(cutReqs.length>=MAX_CUT){alert(`절단 요구는 최대 ${MAX_CUT}개까지입니다.`);return;}
+    setCutReqs(p=>[...p,{id:uid(),...crIn}]);
+    setCrIn({series:'',number:'',cutLength:'',frontG:crIn.frontG,backG:crIn.backG,qty:'1'});
+  };
+
+  const handleOptimize=()=>{
+    const res=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,settings.stdLength);
+    const cm=buildColorMap(cutReqs);
+    setResults(res);
+    setColorMap(cm);
+    setTab('result');
+  };
+
+  // 결과 통계
+  const stats=results?{
+    totalBars:results.bins.length,
+    autoBars:results.bins.filter(b=>b.autoAdded).length,
+    totalEffective:results.bins.reduce((s,b)=>s+b.effectiveLength,0),
+    totalWaste:results.bins.reduce((s,b)=>s+b.remaining,0),
+    reusableWaste:results.bins.filter(b=>b.remaining>=n(settings.minRemainder)).reduce((s,b)=>s+b.remaining,0),
+    reusableCount:results.bins.filter(b=>b.remaining>=n(settings.minRemainder)).length,
+    patterns:groupPatterns(results.bins).length,
+    totalCuts:results.bins.reduce((s,b)=>s+b.assignments.length,0),
+    efficiency:0,
+  }:null;
+  if(stats) stats.efficiency=(((stats.totalEffective-stats.totalWaste)/stats.totalEffective)*100).toFixed(1);
+
+  // 수량 검증
+  const verification=results&&cutReqs.map((cr,i)=>{
+    const required=ni(cr.qty)||1;
+    const produced=results.bins.reduce((s,b)=>
+      s+b.assignments.filter(a=>a.reqIdx===i).length,0);
+    return{...cr,required,produced,diff:produced-required};
+  });
+
+  const canOptimize=cutReqs.length>0;
+
+  return(
+    <div style={{fontFamily:'"Pretendard","Apple SD Gothic Neo",sans-serif',background:'#f1f5f9',minHeight:'100vh'}}>
+
+      {/* 헤더 */}
+      <div style={{background:'#0f172a',color:'white',padding:'11px 16px',
+        display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontSize:15,fontWeight:800,letterSpacing:'-0.5px'}}>
+            LM 가이드 레일 절단 최적화{' '}
+            <span style={{fontSize:11,color:'#38bdf8',fontWeight:600}}>v7</span>
+          </div>
+          <div style={{fontSize:10,color:'#64748b',marginTop:1}}>
+            HSR · SR · SHS · SRS · SRSW | FFD + 원자재 자동 배정 | 대구·경북
+          </div>
+        </div>
+        <div style={{fontSize:11,color:'#475569',textAlign:'right'}}>
+          원자재 {rawMats.length}종 · 절단요구 {cutReqs.length}종
+        </div>
+      </div>
+
+      {/* 탭 */}
+      <div style={{background:'#1e293b',display:'flex',padding:'0 8px',gap:2}}>
+        {[['input','① 입력'],['result','② 결과 / 작업지시서'],['pitch','피치 DB']].map(([k,label])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{
+            padding:'8px 14px',fontSize:12,fontWeight:600,border:'none',cursor:'pointer',
+            background:'none',color:tab===k?'white':'#64748b',
+            borderBottom:tab===k?'2.5px solid #38bdf8':'2.5px solid transparent',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{padding:'12px',maxWidth:960,margin:'0 auto'}}>
+
+        {/* ═══ 입력 탭 ═══ */}
+        {tab==='input'&&<>
+
+          {/* 기본 설정 */}
+          <div style={{background:'white',borderRadius:8,padding:'10px 12px',marginBottom:10,border:'1px solid #e2e8f0'}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#94a3b8',letterSpacing:'1px',marginBottom:8}}>기본 설정</div>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
+              {[['절단날 손실 kerf (mm)','kerf','60px'],['최소 재사용 잔재 (mm)','minRemainder','70px'],
+                ['표준 원자재 길이 (mm)','stdLength','80px'],['작업번호','workNo','80px'],
+                ['작업일','workDate','90px'],['담당자','worker','70px'],['거래처','customer','110px']
+              ].map(([label,key,w])=>(
+                <div key={key}>
+                  <span style={lbl}>{label}</span>
+                  <input value={settings[key]} onChange={e=>setSetting(key,e.target.value)} style={inp(w)}/>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:8,padding:'6px 10px',background:'#f0f9ff',borderRadius:6,fontSize:11,color:'#0369a1'}}>
+              💡 <b>원자재 입력은 선택사항</b> — 비워두면 절단 요구 기준으로 표준 원자재({settings.stdLength}mm)를 자동 배정합니다.
+            </div>
+          </div>
+
+          {/* 원자재 */}
+          <div style={{background:'white',borderRadius:8,padding:'10px 12px',marginBottom:10,border:'1px solid #e2e8f0'}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#94a3b8',letterSpacing:'1px',marginBottom:8}}>
+              원자재 투입 ({rawMats.length}종)
+            </div>
+            {rawMats.length>0&&(
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:10}}>
+                <thead><tr style={{background:'#f8fafc'}}>
+                  {['No','규격','길이(mm)','앞G','뒤G','유효길이',''].map((h,j)=>(
+                    <th key={j} style={{padding:'4px 8px',textAlign:j<2?'left':'right',
+                      fontWeight:700,color:'#64748b',borderBottom:'1.5px solid #e2e8f0',fontSize:11}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {rawMats.map((rm,idx)=>(
+                    <tr key={rm.id} style={{borderBottom:'1px solid #f1f5f9',background:idx%2===0?'white':'#fafafa'}}>
+                      <td style={{padding:'4px 8px',color:'#94a3b8'}}>{idx+1}</td>
+                      <td style={{padding:'4px 8px'}}>
+                        <span style={{fontWeight:800,color:SERIES_COLORS[rm.series],fontFamily:'monospace',fontSize:13}}>
+                          {rm.series}{rm.number}
+                        </span>
+                      </td>
+                      <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace'}}>{rm.length}</td>
+                      <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{rm.frontG}</td>
+                      <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{rm.backG}</td>
+                      <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#059669'}}>{effLen(rm)}</td>
+                      <td style={{textAlign:'center'}}>
+                        <button onClick={()=>setRawMats(p=>p.filter(x=>x.id!==rm.id))}
+                          style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:14,padding:'0 4px'}}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div style={{background:'#f0f9ff',borderRadius:7,padding:'10px',border:'1px dashed #7dd3fc'}}>
+              <div style={{fontSize:11,color:'#0369a1',fontWeight:700,marginBottom:7}}>
+                <span style={{background:'#0369a1',color:'white',borderRadius:3,padding:'1px 6px',fontSize:10}}>원자재</span>
+                {' '}규격 클릭 → 길이 → Tab → 앞G → Tab → 뒤G → Enter
+              </div>
+              <SpecGrid selected={{series:rmIn.series,number:rmIn.number}} onSelect={selectRM}/>
+              <div style={{display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap'}}>
+                <Field label="선택 규격" w="100px">
+                  <input readOnly value={rmIn.series&&rmIn.number?`${rmIn.series}${rmIn.number}`:'—'}
+                    style={inp('100px',{fontWeight:800,color:SERIES_COLORS[rmIn.series]||'#94a3b8',background:'#f8fafc',cursor:'default'})}/>
+                </Field>
+                <Field label="원자재 길이 (mm)" w="110px">
+                  <input ref={rmLenRef} type="number" value={rmIn.length} placeholder="3000"
+                    onChange={e=>setRmIn(p=>({...p,length:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();rmFGRef.current?.focus();rmFGRef.current?.select();}}}
+                    style={inp('110px')}/>
+                </Field>
+                <Field label="앞 G (mm)" w="70px">
+                  <input ref={rmFGRef} type="number" value={rmIn.frontG}
+                    onChange={e=>setRmIn(p=>({...p,frontG:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();rmBGRef.current?.focus();rmBGRef.current?.select();}}}
+                    style={inp('70px')}/>
+                </Field>
+                <Field label="뒤 G (mm)" w="70px">
+                  <input ref={rmBGRef} type="number" value={rmIn.backG}
+                    onChange={e=>setRmIn(p=>({...p,backG:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();if(canRM)addRM();}}}
+                    style={inp('70px')}/>
+                </Field>
+                {rmIn.length&&(
+                  <div style={{fontSize:12,color:'#059669',fontWeight:700,paddingBottom:6}}>
+                    유효 {Math.max(0,n(rmIn.length)-n(rmIn.frontG)-n(rmIn.backG))}mm
+                  </div>
+                )}
+                <div style={{marginLeft:'auto'}}>
+                  <button onClick={addRM} disabled={!canRM}
+                    style={{background:canRM?'#0369a1':'#e2e8f0',color:canRM?'white':'#94a3b8',
+                      border:'none',borderRadius:6,padding:'6px 16px',fontSize:13,fontWeight:700,
+                      cursor:canRM?'pointer':'not-allowed',marginTop:18}}>
+                    + 추가
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 절단 요구 */}
+          <div style={{background:'white',borderRadius:8,padding:'10px 12px',marginBottom:10,border:'1px solid #e2e8f0'}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#94a3b8',letterSpacing:'1px',marginBottom:8}}>
+              절단 요구 목록 ({cutReqs.length}/{MAX_CUT}종)
+            </div>
+            {cutReqs.length>0&&(
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:10}}>
+                <thead><tr style={{background:'#f8fafc'}}>
+                  {['No','색','규격','절단길이','앞G','뒤G','수량','실물길이','G검증',''].map((h,j)=>(
+                    <th key={j} style={{padding:'4px 8px',textAlign:j<3?'left':'right',
+                      fontWeight:700,color:'#64748b',borderBottom:'1.5px solid #e2e8f0',fontSize:11}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {cutReqs.map((cr,idx)=>{
+                    const ck=`${cr.series}${cr.number}-${cr.cutLength}`;
+                    const col=colorMap[ck]||'#94a3b8';
+                    return(
+                      <tr key={cr.id} style={{borderBottom:'1px solid #f1f5f9',background:idx%2===0?'white':'#fafafa'}}>
+                        <td style={{padding:'4px 8px',color:'#94a3b8'}}>{idx+1}</td>
+                        <td style={{padding:'4px 8px'}}>
+                          <div style={{width:16,height:16,borderRadius:3,background:col}}/>
+                        </td>
+                        <td style={{padding:'4px 8px'}}>
+                          <span style={{fontWeight:800,color:SERIES_COLORS[cr.series],fontFamily:'monospace',fontSize:13}}>
+                            {cr.series}{cr.number}
+                          </span>
+                        </td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{cr.cutLength}</td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{cr.frontG}</td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{cr.backG}</td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#0369a1'}}>{cr.qty} EA</td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(cr.cutLength)}</td>
+                        <td style={{padding:'4px 6px',textAlign:'center'}}>
+                          {(()=>{
+                            const vg=validateG(cr.series,cr.number,cr.cutLength,cr.frontG,cr.backG);
+                            if(!vg) return <span style={{fontSize:10,color:'#94a3b8'}}>—</span>;
+                            if(vg.ok) return(
+                              <span style={{fontSize:10,fontWeight:700,color:'#059669',background:'#dcfce7',borderRadius:3,padding:'1px 5px'}}>
+                                ✓ {vg.holes}홀
+                              </span>
+                            );
+                            return(
+                              <span style={{fontSize:10,fontWeight:700,color:'#dc2626',background:'#fef2f2',borderRadius:3,padding:'1px 5px',cursor:'help',display:'inline-block',textAlign:'center'}}
+                                title={`피치 ${vg.pitch}mm | 유효길이 ${vg.net}mm → ${vg.holes}홀(오류)\n추천G(대칭): ${vg.suggestions.map(s=>`${s.holes}홀=앞뒤${s.gSym}mm`).join(' / ')}`}>
+                                ⚠ G오류
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td style={{textAlign:'center'}}>
+                          <button onClick={()=>setCutReqs(p=>p.filter(x=>x.id!==cr.id))}
+                            style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:14,padding:'0 4px'}}>✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            <div style={{background:'#faf5ff',borderRadius:7,padding:'10px',border:'1px dashed #c4b5fd'}}>
+              <div style={{fontSize:11,color:'#7c3aed',fontWeight:700,marginBottom:7}}>
+                <span style={{background:'#7c3aed',color:'white',borderRadius:3,padding:'1px 6px',fontSize:10}}>절단요구</span>
+                {' '}규격 클릭 → 절단길이 → Tab → 앞G → Tab → 뒤G → Tab → 수량 → [Tab: 추가 후 다음길이] [Enter: 추가]
+              </div>
+              <SpecGrid selected={{series:crIn.series,number:crIn.number}} onSelect={selectCR}/>
+              <div style={{display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap'}}>
+                <Field label="선택 규격" w="100px">
+                  <input readOnly value={crIn.series&&crIn.number?`${crIn.series}${crIn.number}`:'—'}
+                    style={inp('100px',{fontWeight:800,color:SERIES_COLORS[crIn.series]||'#94a3b8',background:'#f5f3ff',cursor:'default'})}/>
+                </Field>
+                <Field label="절단길이 (mm)" w="110px">
+                  <input ref={crLenRef} type="number" value={crIn.cutLength} placeholder="500"
+                    onChange={e=>setCrIn(p=>({...p,cutLength:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();crFGRef.current?.focus();crFGRef.current?.select();}}}
+                    style={inp('110px')}/>
+                </Field>
+                <Field label="앞 G (mm)" w="70px">
+                  <input ref={crFGRef} type="number" value={crIn.frontG}
+                    onChange={e=>setCrIn(p=>({...p,frontG:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();crBGRef.current?.focus();crBGRef.current?.select();}}}
+                    style={inp('70px')}/>
+                </Field>
+                <Field label="뒤 G (mm)" w="70px">
+                  <input ref={crBGRef} type="number" value={crIn.backG}
+                    onChange={e=>setCrIn(p=>({...p,backG:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();crQtyRef.current?.focus();crQtyRef.current?.select();}}}
+                    style={inp('70px')}/>
+                </Field>
+                <Field label="수량 (EA)" w="65px">
+                  <input ref={crQtyRef} type="number" value={crIn.qty} min={1}
+                    onChange={e=>setCrIn(p=>({...p,qty:e.target.value}))}
+                    onKeyDown={e=>{
+                      if(e.key==='Enter'){e.preventDefault();if(canCR)addCR();}
+                      if(e.key==='Tab'){
+                        e.preventDefault();
+                        if(canCR){
+                          if(cutReqs.length<MAX_CUT){
+                            setCutReqs(p=>[...p,{id:uid(),...crIn}]);
+                            // 규격·G값 유지, 길이·수량만 초기화 → 바로 다음 길이 입력 가능
+                            setCrIn(p=>({...p,cutLength:'',qty:'1'}));
+                          }
+                          setTimeout(()=>{crLenRef.current?.focus();crLenRef.current?.select();},30);
+                        } else {
+                          crLenRef.current?.focus();
+                        }
+                      }
+                    }}
+                    style={inp('65px')}/>
+                </Field>
+                <div style={{marginLeft:'auto'}}>
+                  <button onClick={addCR} disabled={!canCR}
+                    style={{background:canCR?'#7c3aed':'#e2e8f0',color:canCR?'white':'#94a3b8',
+                      border:'none',borderRadius:6,padding:'6px 16px',fontSize:13,fontWeight:700,
+                      cursor:canCR?'pointer':'not-allowed',marginTop:18}}>
+                    + 추가
+                  </button>
+                </div>
+              </div>
+              {/* 실시간 G값 피치 검증 */}
+              {(()=>{
+                const vg=validateG(crIn.series,crIn.number,crIn.cutLength,crIn.frontG,crIn.backG);
+                if(!vg) return null;
+                if(vg.ok) return(
+                  <div style={{marginTop:8,padding:'7px 10px',background:'#f0fdf4',borderRadius:6,
+                    border:'1px solid #86efac',display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:11,color:'#15803d',fontWeight:700}}>✓ G값 정상</span>
+                    <span style={{fontSize:11,color:'#166534'}}>
+                      피치 {vg.pitch}mm × <b>{vg.holes}홀</b> — 볼트홀 정렬 OK
+                    </span>
+                  </div>
+                );
+                return(
+                  <div style={{marginTop:8,padding:'8px 10px',background:'#fef2f2',borderRadius:6,border:'1.5px solid #fca5a5'}}>
+                    <div style={{fontSize:11,color:'#dc2626',fontWeight:800,marginBottom:4}}>
+                      ⚠ G값 오류 — 피치 {vg.pitch}mm 기준 볼트홀이 맞지 않습니다
+                    </div>
+                    <div style={{fontSize:11,color:'#991b1b',marginBottom:4}}>
+                      유효길이 {vg.net}mm ÷ 피치 {vg.pitch}mm = <b>{vg.holes}홀</b> (정수 아님)
+                    </div>
+                    {vg.suggestions.length>0&&(
+                      <div style={{fontSize:11,color:'#7f1d1d',fontWeight:700}}>
+                        추천 G값 (대칭) ▶ &nbsp;
+                        {vg.suggestions.map((s,si)=>(
+                          <span key={si} style={{marginRight:12,cursor:'pointer',textDecoration:'underline',color:'#b91c1c'}}
+                            onClick={()=>setCrIn(p=>({...p,frontG:s.gSym,backG:s.gSym}))}>
+                            {s.holes}홀: 앞뒤 각 {s.gSym}mm 적용
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          <button onClick={handleOptimize} disabled={!canOptimize} style={{
+            width:'100%',padding:'13px',fontSize:15,fontWeight:800,border:'none',borderRadius:8,
+            cursor:canOptimize?'pointer':'not-allowed',letterSpacing:'-0.3px',
+            background:canOptimize?'#0f172a':'#e2e8f0',color:canOptimize?'white':'#94a3b8',
+          }}>최적화 실행 →</button>
+        </>}
+
+        {/* ═══ 결과 탭 ═══ */}
+        {tab==='result'&&(
+          !results?(
+            <div style={{textAlign:'center',padding:60,color:'#94a3b8',fontSize:13}}>
+              입력 탭에서 절단 요구 입력 후 [최적화 실행]을 눌러주세요
+            </div>
+          ):(
+            <div>
+              {/* 작업지시서 헤더 */}
+              <div style={{background:'#0f172a',borderRadius:8,padding:'10px 14px',marginBottom:10,color:'white'}}>
+                <div style={{fontSize:13,fontWeight:800,marginBottom:5}}>■ 절단 작업 지시서</div>
+                <div style={{display:'flex',gap:14,fontSize:11,color:'#94a3b8',flexWrap:'wrap'}}>
+                  {[['작업번호',settings.workNo||'—'],['작업일',settings.workDate],
+                    ['담당자',settings.worker||'—'],['거래처',settings.customer||'—'],
+                    ['절단날손실',settings.kerf+'mm'],['표준원자재',settings.stdLength+'mm'],
+                  ].map(([k,v])=>(
+                    <span key={k}>{k}: <b style={{color:'white'}}>{v}</b></span>
+                  ))}
+                </div>
+              </div>
+
+              {/* 요약 통계 카드 */}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:10}}>
+                {[
+                  ['투입 원자재',`${stats.totalBars}개${stats.autoBars>0?` (자동${stats.autoBars})`:''}`,'#0369a1'],
+                  ['재료 효율',`${stats.efficiency}%`,parseFloat(stats.efficiency)>=90?'#059669':parseFloat(stats.efficiency)>=75?'#d97706':'#dc2626'],
+                  ['총 잔재',`${stats.totalWaste.toFixed(0)}mm`,'#64748b'],
+                  ['재사용 잔재',`${stats.reusableCount}개 / ${stats.reusableWaste.toFixed(0)}mm`,'#d97706'],
+                  ['절단 패턴',`${stats.patterns}패턴`,'#7c3aed'],
+                ].map(([label,val,col])=>(
+                  <div key={label} style={{background:'white',borderRadius:8,padding:'10px 12px',
+                    border:'1px solid #e2e8f0',textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#94a3b8',fontWeight:700,marginBottom:4,letterSpacing:'0.3px'}}>{label}</div>
+                    <div style={{fontSize:16,fontWeight:800,color:col,lineHeight:1}}>{val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 색상 범례 */}
+              {Object.keys(colorMap).length>0&&(
+                <div style={{background:'white',borderRadius:8,padding:'8px 12px',marginBottom:10,
+                  border:'1px solid #e2e8f0',display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
+                  <span style={{fontSize:11,fontWeight:700,color:'#64748b',marginRight:4}}>색상 범례 ▶</span>
+                  {cutReqs.map((cr,i)=>{
+                    const ck=`${cr.series}${cr.number}-${cr.cutLength}`;
+                    const col=colorMap[ck]||'#94a3b8';
+                    return(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:4}}>
+                        <div style={{width:20,height:14,borderRadius:3,background:col}}/>
+                        <span style={{fontSize:11,color:'#334155',fontFamily:'monospace',fontWeight:600}}>
+                          {cr.series}{cr.number}-{cr.cutLength}L
+                          {(n(cr.frontG)||n(cr.backG))?` (앞${cr.frontG}/뒤${cr.backG})`:''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {results.bins.some(b=>b.remaining>=n(settings.minRemainder))&&(
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <div style={{width:20,height:14,borderRadius:3,background:'#fef9c3',border:'1px solid #fde68a'}}/>
+                      <span style={{fontSize:11,color:'#92400e',fontWeight:600}}>★ 재사용가능</span>
+                    </div>
+                  )}
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <div style={{width:20,height:14,borderRadius:3,background:'#f1f5f9',border:'1px solid #e2e8f0'}}/>
+                    <span style={{fontSize:11,color:'#64748b',fontWeight:600}}>폐기잔재</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 자동배정 원자재 안내 */}
+              {stats.autoBars>0&&(()=>{
+                const autoSummary={};
+                results.bins.filter(b=>b.autoAdded).forEach(b=>{
+                  const key=`${b.series}${b.number}  ${b.length}mm`;
+                  autoSummary[key]=(autoSummary[key]||0)+1;
+                });
+                return(
+                  <div style={{background:'#fffbeb',borderRadius:8,padding:'10px 14px',marginBottom:10,border:'1.5px solid #fde68a'}}>
+                    <div style={{fontWeight:800,color:'#92400e',marginBottom:5,fontSize:12}}>
+                      📦 준비 필요 원자재 (자동 배정)
+                    </div>
+                    <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+                      {Object.entries(autoSummary).map(([spec,cnt])=>(
+                        <span key={spec} style={{fontSize:13,color:'#78350f',fontFamily:'monospace',fontWeight:700}}>
+                          {spec} × {cnt}개
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 패턴별 인포그래픽 바 */}
+              {groupPatterns(results.bins).map((g,pi)=>(
+                <CutBar key={pi} bin={g.bin} count={g.count} colorMap={colorMap}
+                  kerf={settings.kerf} minRemainder={settings.minRemainder} patIdx={pi}/>
+              ))}
+
+              {/* 길이 초과 경고 */}
+              {results.tooLong.length>0&&(
+                <div style={{background:'#fef2f2',borderRadius:8,padding:'10px 14px',marginBottom:10,border:'1px solid #fecaca'}}>
+                  <div style={{fontWeight:800,color:'#dc2626',marginBottom:6,fontSize:13}}>
+                    ⚠️ 표준 원자재({settings.stdLength}mm)보다 큰 절단 요구 {results.tooLong.length}건
+                  </div>
+                  {results.tooLong.map((u,j)=>(
+                    <div key={j} style={{fontSize:12,color:'#991b1b',marginBottom:2}}>
+                      · {u.series}{u.number} 절단길이 {u.cutLen}mm (요구 #{u.reqIdx+1})
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 수량 검증 테이블 */}
+              <div style={{background:'white',borderRadius:8,border:'1px solid #e2e8f0',marginBottom:10,overflow:'hidden'}}>
+                <div style={{background:'#f8fafc',padding:'8px 14px',borderBottom:'1px solid #e2e8f0',
+                  fontWeight:800,fontSize:12,color:'#0f172a'}}>
+                  [ 수량 검증 — 정확 절단 확인 ]
+                </div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'#f8fafc'}}>
+                      {['No','규격','G값 (앞/뒤)','절단길이','실물길이','필요수량','생산수량','차이','상태'].map((h,j)=>(
+                        <th key={j} style={{padding:'6px 10px',textAlign:j<3?'left':'right',
+                          fontWeight:700,color:'#64748b',borderBottom:'1px solid #e2e8f0',fontSize:11}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {verification.map((v,idx)=>{
+                      const ok=v.diff===0;
+                      return(
+                        <tr key={idx} style={{borderBottom:'1px solid #f1f5f9',
+                          background:ok?(idx%2===0?'white':'#fafafa'):'#fef2f2'}}>
+                          <td style={{padding:'5px 10px',color:'#94a3b8'}}>{idx+1}</td>
+                          <td style={{padding:'5px 10px'}}>
+                            <div style={{display:'flex',alignItems:'center',gap:6}}>
+                              <div style={{width:10,height:10,borderRadius:2,
+                                background:colorMap[`${v.series}${v.number}-${v.cutLength}`]||'#94a3b8'}}/>
+                              <span style={{fontWeight:800,color:SERIES_COLORS[v.series],fontFamily:'monospace'}}>
+                                {v.series}{v.number}-{v.cutLength}L
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{padding:'5px 10px',fontFamily:'monospace',color:'#64748b'}}>
+                            ({v.frontG}/{v.backG})
+                          </td>
+                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.cutLength}</td>
+                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(v.cutLength)}</td>
+                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace'}}>{v.required}</td>
+                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.produced}</td>
+                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',
+                            color:v.diff===0?'#059669':v.diff>0?'#2563eb':'#dc2626',fontWeight:700}}>
+                            {v.diff>0?'+':''}{v.diff}
+                          </td>
+                          <td style={{padding:'5px 10px',textAlign:'right'}}>
+                            <span style={{
+                              background:ok?'#dcfce7':'#fef2f2',
+                              color:ok?'#166534':'#dc2626',
+                              fontSize:11,fontWeight:800,borderRadius:4,padding:'2px 8px',
+                            }}>
+                              {ok?'✓ 정확':'✗ 불일치'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <button onClick={()=>window.print()}
+                style={{width:'100%',padding:11,fontSize:14,fontWeight:700,border:'none',
+                  borderRadius:8,background:'#1e293b',color:'white',cursor:'pointer'}}>
+                🖨 인쇄
+              </button>
+            </div>
+          )
+        )}
+
+        {/* ═══ 피치 DB 탭 ═══ */}
+        {tab==='pitch'&&(
+          <div style={{background:'white',borderRadius:8,padding:'12px 14px',border:'1px solid #e2e8f0'}}>
+            <div style={{fontWeight:800,fontSize:13,color:'#0f172a',marginBottom:4}}>규격별 피치 기준표</div>
+            <div style={{fontSize:11,color:'#94a3b8',marginBottom:12}}>
+              피치 = 볼트 홀 간격(mm) | G값은 별도 직접 입력
+            </div>
+            {Object.entries(PITCH_DB).map(([series,nums])=>(
+              <div key={series} style={{marginBottom:14}}>
+                <div style={{fontWeight:800,color:SERIES_COLORS[series],marginBottom:5,fontFamily:'monospace',fontSize:13}}>{series}</div>
+                <table style={{borderCollapse:'collapse',fontSize:12}}>
+                  <thead><tr>
+                    <th style={{padding:'4px 12px',background:'#f8fafc',border:'1px solid #e2e8f0',fontWeight:700,color:'#64748b',fontSize:11}}>번호</th>
+                    {Object.keys(nums).map(num=>(
+                      <th key={num} style={{padding:'4px 14px',background:'#f8fafc',border:'1px solid #e2e8f0',fontFamily:'monospace',fontWeight:700,color:'#334155'}}>{num}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody><tr>
+                    <td style={{padding:'4px 12px',border:'1px solid #e2e8f0',fontWeight:700,color:'#64748b',fontSize:11}}>피치(mm)</td>
+                    {Object.values(nums).map((p,j)=>(
+                      <td key={j} style={{padding:'4px 14px',border:'1px solid #e2e8f0',textAlign:'right',
+                        fontFamily:'monospace',fontWeight:700,color:SERIES_COLORS[series]}}>{p}</td>
+                    ))}
+                  </tr></tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
 </body>
 </html>
