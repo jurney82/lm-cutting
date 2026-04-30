@@ -19,6 +19,74 @@
   </style>
 </head>
 <body>
+
+  <style>
+    #pw-screen{
+      position:fixed;inset:0;background:#0f172a;
+      display:flex;align-items:center;justify-content:center;
+      z-index:9999;flex-direction:column;gap:16px;
+    }
+    #pw-screen.hidden{display:none;}
+    .pw-box{background:#1e293b;border-radius:12px;padding:36px 40px;
+      text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:300px;}
+    .pw-title{color:white;font-size:17px;font-weight:800;margin-bottom:4px;letter-spacing:-0.5px;}
+    .pw-sub{color:#64748b;font-size:12px;margin-bottom:24px;}
+    .pw-input{width:100%;padding:10px 14px;border-radius:7px;border:2px solid #334155;
+      background:#0f172a;color:white;font-size:15px;text-align:center;
+      letter-spacing:4px;outline:none;margin-bottom:12px;}
+    .pw-input:focus{border-color:#38bdf8;}
+    .pw-btn{width:100%;padding:10px;border:none;border-radius:7px;
+      background:#38bdf8;color:#0f172a;font-size:14px;font-weight:800;
+      cursor:pointer;transition:background 0.15s;}
+    .pw-btn:hover{background:#7dd3fc;}
+    .pw-error{color:#f87171;font-size:12px;font-weight:600;min-height:18px;}
+    #root{display:none;}
+  </style>
+
+  <div id="pw-screen">
+    <div class="pw-box">
+      <div class="pw-title">LM 가이드 레일 절단 최적화</div>
+      <div class="pw-sub">태광베어링 | 접근 비밀번호를 입력하세요</div>
+      <input id="pw-input" class="pw-input" type="password" placeholder="••••••"
+        maxlength="20" onkeydown="if(event.key==='Enter')checkPw()"/>
+      <button class="pw-btn" onclick="checkPw()">확인</button>
+      <div id="pw-error" class="pw-error"></div>
+    </div>
+  </div>
+
+  <script>
+    // 비밀번호 해시 (SHA-256) — 원본 비밀번호는 소스에 없음
+    // 현재 비밀번호: 6112
+    const PW_HASH = 'cb7593a6adb4b6339f9b0d794acc8903819db9e7c57624a3f0961d085b231999';
+
+    async function hashStr(str){
+      const buf = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+
+    async function checkPw(){
+      const val = document.getElementById('pw-input').value;
+      const h = await hashStr(val);
+      if(h === PW_HASH){
+        document.getElementById('pw-screen').classList.add('hidden');
+        document.getElementById('root').style.display='block';
+        sessionStorage.setItem('lm_auth','1');
+      } else {
+        document.getElementById('pw-error').textContent='비밀번호가 틀렸습니다.';
+        document.getElementById('pw-input').value='';
+        document.getElementById('pw-input').focus();
+      }
+    }
+
+    // 세션 유지 (새로고침해도 재입력 불필요)
+    if(sessionStorage.getItem('lm_auth')==='1'){
+      document.addEventListener('DOMContentLoaded',()=>{
+        document.getElementById('pw-screen').classList.add('hidden');
+        document.getElementById('root').style.display='block';
+      });
+    }
+  </script>
+
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useRef } = React;
@@ -315,6 +383,8 @@ function App(){
   const [cutReqs,setCutReqs]=useState([]);
   const [results,setResults]=useState(null);
   const [colorMap,setColorMap]=useState({});
+  const [editingId,setEditingId]=useState(null);
+  const [editRow,setEditRow]=useState({});
 
   const [rmIn,setRmIn]=useState({series:'',number:'',length:'',frontG:'0',backG:'0'});
   const [crIn,setCrIn]=useState({series:'',number:'',cutLength:'',frontG:'0',backG:'0',qty:'1'});
@@ -534,8 +604,17 @@ function App(){
                   {cutReqs.map((cr,idx)=>{
                     const ck=`${cr.series}${cr.number}-${cr.cutLength}`;
                     const col=colorMap[ck]||'#94a3b8';
+                    const isEdit=editingId===cr.id;
+                    const vg=validateG(cr.series,cr.number,cr.cutLength,cr.frontG,cr.backG);
+                    const cellInp=(field,w)=>(
+                      <input type="number" value={editRow[field]||''}
+                        onChange={e=>setEditRow(p=>({...p,[field]:e.target.value}))}
+                        style={{width:w||50,border:'1.5px solid #a78bfa',borderRadius:4,
+                          padding:'2px 4px',fontSize:12,fontFamily:'monospace',textAlign:'right',outline:'none'}}/>
+                    );
                     return(
-                      <tr key={cr.id} style={{borderBottom:'1px solid #f1f5f9',background:idx%2===0?'white':'#fafafa'}}>
+                      <tr key={cr.id} style={{borderBottom:'1px solid #f1f5f9',
+                        background:isEdit?'#faf5ff':idx%2===0?'white':'#fafafa'}}>
                         <td style={{padding:'4px 8px',color:'#94a3b8'}}>{idx+1}</td>
                         <td style={{padding:'4px 8px'}}>
                           <div style={{width:16,height:16,borderRadius:3,background:col}}/>
@@ -545,31 +624,62 @@ function App(){
                             {cr.series}{cr.number}
                           </span>
                         </td>
-                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{cr.cutLength}</td>
-                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{cr.frontG}</td>
-                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{cr.backG}</td>
-                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#0369a1'}}>{cr.qty} EA</td>
-                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(cr.cutLength)}</td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>
+                          {isEdit?cellInp('cutLength',60):cr.cutLength}
+                        </td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>
+                          {isEdit?cellInp('frontG',45):cr.frontG}
+                        </td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>
+                          {isEdit?cellInp('backG',45):cr.backG}
+                        </td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#0369a1'}}>
+                          {isEdit?cellInp('qty',40):<span>{cr.qty} EA</span>}
+                        </td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(isEdit?editRow.cutLength:cr.cutLength)}</td>
                         <td style={{padding:'4px 6px',textAlign:'center'}}>
                           {(()=>{
-                            const vg=validateG(cr.series,cr.number,cr.cutLength,cr.frontG,cr.backG);
-                            if(!vg) return <span style={{fontSize:10,color:'#94a3b8'}}>—</span>;
-                            if(vg.ok) return(
+                            const vgd=isEdit?validateG(cr.series,cr.number,editRow.cutLength,editRow.frontG,editRow.backG):vg;
+                            if(!vgd) return <span style={{fontSize:10,color:'#94a3b8'}}>—</span>;
+                            if(vgd.ok) return(
                               <span style={{fontSize:10,fontWeight:700,color:'#059669',background:'#dcfce7',borderRadius:3,padding:'1px 5px'}}>
-                                ✓ {vg.holes}홀
+                                ✓ {vgd.holes}홀
                               </span>
                             );
                             return(
                               <span style={{fontSize:10,fontWeight:700,color:'#dc2626',background:'#fef2f2',borderRadius:3,padding:'1px 5px',cursor:'help',display:'inline-block',textAlign:'center'}}
-                                title={`피치 ${vg.pitch}mm | 유효길이 ${vg.net}mm → ${vg.holes}홀(오류)\n추천G(대칭): ${vg.suggestions.map(s=>`${s.holes}홀=앞뒤${s.gSym}mm`).join(' / ')}`}>
+                                title={`피치 ${vgd.pitch}mm | 유효길이 ${vgd.net}mm → ${vgd.holes}홀(오류)\n추천G: ${vgd.suggestions.map(s=>`${s.holes}홀=앞뒤${s.gSym}mm`).join(' / ')}`}>
                                 ⚠ G오류
                               </span>
                             );
                           })()}
                         </td>
-                        <td style={{textAlign:'center'}}>
-                          <button onClick={()=>setCutReqs(p=>p.filter(x=>x.id!==cr.id))}
-                            style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:14,padding:'0 4px'}}>✕</button>
+                        <td style={{textAlign:'center',whiteSpace:'nowrap'}}>
+                          {isEdit?(
+                            <>
+                              <button onClick={()=>{
+                                  setCutReqs(p=>p.map(x=>x.id===cr.id?{...x,...editRow}:x));
+                                  setEditingId(null);
+                                }}
+                                style={{background:'#7c3aed',color:'white',border:'none',borderRadius:4,
+                                  padding:'2px 7px',fontSize:11,fontWeight:700,cursor:'pointer',marginRight:3}}>
+                                저장
+                              </button>
+                              <button onClick={()=>setEditingId(null)}
+                                style={{background:'none',border:'1px solid #e2e8f0',borderRadius:4,
+                                  padding:'2px 6px',fontSize:11,cursor:'pointer',color:'#64748b'}}>
+                                취소
+                              </button>
+                            </>
+                          ):(
+                            <>
+                              <button onClick={()=>{setEditingId(cr.id);setEditRow({cutLength:cr.cutLength,frontG:cr.frontG,backG:cr.backG,qty:cr.qty});}}
+                                style={{background:'none',border:'none',color:'#7c3aed',cursor:'pointer',fontSize:13,padding:'0 3px'}}
+                                title="수정">✏️</button>
+                              <button onClick={()=>setCutReqs(p=>p.filter(x=>x.id!==cr.id))}
+                                style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:14,padding:'0 3px'}}>✕</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     );
@@ -687,177 +797,339 @@ function App(){
             <div style={{textAlign:'center',padding:60,color:'#94a3b8',fontSize:13}}>
               입력 탭에서 절단 요구 입력 후 [최적화 실행]을 눌러주세요
             </div>
-          ):(
-            <div>
-              {/* 작업지시서 헤더 */}
-              <div style={{background:'#0f172a',borderRadius:8,padding:'10px 14px',marginBottom:10,color:'white'}}>
-                <div style={{fontSize:13,fontWeight:800,marginBottom:5}}>■ 절단 작업 지시서</div>
-                <div style={{display:'flex',gap:14,fontSize:11,color:'#94a3b8',flexWrap:'wrap'}}>
-                  {[['작업번호',settings.workNo||'—'],['작업일',settings.workDate],
-                    ['담당자',settings.worker||'—'],['거래처',settings.customer||'—'],
-                    ['절단날손실',settings.kerf+'mm'],['표준원자재',settings.stdLength+'mm'],
-                  ].map(([k,v])=>(
-                    <span key={k}>{k}: <b style={{color:'white'}}>{v}</b></span>
-                  ))}
-                </div>
-              </div>
+          ):(()=>{
+            // 규격별 그룹핑
+            const specGroups=[];
+            results.bins.forEach(bin=>{
+              let g=specGroups.find(x=>x.specKey===bin.specKey);
+              if(!g){g={specKey:bin.specKey,series:bin.series,number:bin.number,bins:[]};specGroups.push(g);}
+              g.bins.push(bin);
+            });
 
-              {/* 요약 통계 카드 */}
-              <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:10}}>
-                {[
-                  ['투입 원자재',`${stats.totalBars}개${stats.autoBars>0?` (자동${stats.autoBars})`:''}`,'#0369a1'],
-                  ['재료 효율',`${stats.efficiency}%`,parseFloat(stats.efficiency)>=90?'#059669':parseFloat(stats.efficiency)>=75?'#d97706':'#dc2626'],
-                  ['총 잔재',`${stats.totalWaste.toFixed(0)}mm`,'#64748b'],
-                  ['재사용 잔재',`${stats.reusableCount}개 / ${stats.reusableWaste.toFixed(0)}mm`,'#d97706'],
-                  ['절단 패턴',`${stats.patterns}패턴`,'#7c3aed'],
-                ].map(([label,val,col])=>(
-                  <div key={label} style={{background:'white',borderRadius:8,padding:'10px 12px',
-                    border:'1px solid #e2e8f0',textAlign:'center'}}>
-                    <div style={{fontSize:10,color:'#94a3b8',fontWeight:700,marginBottom:4,letterSpacing:'0.3px'}}>{label}</div>
-                    <div style={{fontSize:16,fontWeight:800,color:col,lineHeight:1}}>{val}</div>
+            return(
+              <div>
+                {/* 작업지시서 헤더 */}
+                <div style={{background:'#0f172a',borderRadius:8,padding:'10px 14px',marginBottom:10,color:'white'}}>
+                  <div style={{fontSize:13,fontWeight:800,marginBottom:5}}>■ 절단 작업 지시서</div>
+                  <div style={{display:'flex',gap:14,fontSize:11,color:'#94a3b8',flexWrap:'wrap'}}>
+                    {[['작업번호',settings.workNo||'—'],['작업일',settings.workDate],
+                      ['담당자',settings.worker||'—'],['거래처',settings.customer||'—'],
+                      ['절단날손실',settings.kerf+'mm'],['표준원자재',settings.stdLength+'mm'],
+                    ].map(([k,v])=>(
+                      <span key={k}>{k}: <b style={{color:'white'}}>{v}</b></span>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
 
-              {/* 색상 범례 */}
-              {Object.keys(colorMap).length>0&&(
-                <div style={{background:'white',borderRadius:8,padding:'8px 12px',marginBottom:10,
-                  border:'1px solid #e2e8f0',display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
-                  <span style={{fontSize:11,fontWeight:700,color:'#64748b',marginRight:4}}>색상 범례 ▶</span>
-                  {cutReqs.map((cr,i)=>{
-                    const ck=`${cr.series}${cr.number}-${cr.cutLength}`;
-                    const col=colorMap[ck]||'#94a3b8';
-                    return(
-                      <div key={i} style={{display:'flex',alignItems:'center',gap:4}}>
-                        <div style={{width:20,height:14,borderRadius:3,background:col}}/>
-                        <span style={{fontSize:11,color:'#334155',fontFamily:'monospace',fontWeight:600}}>
-                          {cr.series}{cr.number}-{cr.cutLength}L
-                          {(n(cr.frontG)||n(cr.backG))?` (앞${cr.frontG}/뒤${cr.backG})`:''}
+                {/* 규격별 섹션 */}
+                {specGroups.map((sg,si)=>{
+                  const pitch=PITCH_DB[sg.series]?.[sg.number]||'—';
+                  const col=SERIES_COLORS[sg.series]||'#334155';
+                  const patterns=groupPatterns(sg.bins);
+                  const totalBars=sg.bins.length;
+                  const autoBars=sg.bins.filter(b=>b.autoAdded).length;
+                  const totalEff=sg.bins.reduce((s,b)=>s+b.effectiveLength,0);
+                  const totalRem=sg.bins.reduce((s,b)=>s+b.remaining,0);
+                  const totalCuts=sg.bins.reduce((s,b)=>s+b.assignments.length,0);
+                  const eff=totalEff>0?((totalEff-totalRem)/totalEff*100).toFixed(1):'0';
+                  const reusableBins=sg.bins.filter(b=>b.remaining>=n(settings.minRemainder));
+                  const reusableSum=reusableBins.reduce((s,b)=>s+b.remaining,0);
+                  const firstBin=sg.bins[0];
+                  const stockLen=firstBin.length;
+                  const fG=firstBin.frontG; const bG=firstBin.backG;
+                  const effLen2=firstBin.effectiveLength;
+
+                  // 이 규격의 절단 요구만 필터
+                  const specCutReqs=cutReqs.filter(cr=>`${cr.series}${cr.number}`===sg.specKey);
+                  const specVerify=specCutReqs.map((cr,ci)=>{
+                    const ri=cutReqs.indexOf(cr);
+                    const required=ni(cr.qty)||1;
+                    const produced=results.bins.reduce((s,b)=>s+b.assignments.filter(a=>a.reqIdx===ri).length,0);
+                    return{...cr,required,produced,diff:produced-required};
+                  });
+                  // 이 규격 절단 색상맵
+                  const specColorKeys=specCutReqs.map(cr=>`${cr.series}${cr.number}-${cr.cutLength}`);
+                  
+                  // 자동배정 원자재 집계
+                  const autoSummary={};
+                  sg.bins.filter(b=>b.autoAdded).forEach(b=>{
+                    const k2=`${b.series}${b.number} ${b.length}mm`;
+                    autoSummary[k2]=(autoSummary[k2]||0)+1;
+                  });
+
+                  return(
+                    <div key={sg.specKey} style={{marginBottom:20}}>
+
+                      {/* 규격 헤더 바 */}
+                      <div style={{background:'#1e3a5f',borderRadius:'8px 8px 0 0',
+                        padding:'8px 14px',display:'flex',alignItems:'center',
+                        gap:10,flexWrap:'wrap'}}>
+                        <span style={{color:'white',fontWeight:900,fontSize:14,fontFamily:'monospace'}}>
+                          ■ {sg.series}{sg.number}
+                        </span>
+                        <span style={{background:col,color:'white',fontSize:11,fontWeight:800,
+                          borderRadius:4,padding:'1px 8px',fontFamily:'monospace'}}>
+                          {pitch}mm
+                        </span>
+                        <span style={{color:'#94a3b8',fontSize:11,fontFamily:'monospace'}}>
+                          | {sg.series}{sg.number}-{stockLen}
+                          &nbsp;|&nbsp;원자재 {stockLen}mm
+                          &nbsp;|&nbsp;유효 {effLen2}mm
+                          {(n(fG)||n(bG))?` (앞G값=${fG} / 뒤G값=${bG})`:''}
+                          &nbsp;|&nbsp;{totalCuts}본
+                        </span>
+                        <span style={{marginLeft:'auto',fontWeight:800,fontSize:13,
+                          color:parseFloat(eff)>=90?'#4ade80':parseFloat(eff)>=75?'#fbbf24':'#f87171'}}>
+                          효율 {eff}%
                         </span>
                       </div>
-                    );
-                  })}
-                  {results.bins.some(b=>b.remaining>=n(settings.minRemainder))&&(
-                    <div style={{display:'flex',alignItems:'center',gap:4}}>
-                      <div style={{width:20,height:14,borderRadius:3,background:'#fef9c3',border:'1px solid #fde68a'}}/>
-                      <span style={{fontSize:11,color:'#92400e',fontWeight:600}}>★ 재사용가능</span>
-                    </div>
-                  )}
-                  <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <div style={{width:20,height:14,borderRadius:3,background:'#f1f5f9',border:'1px solid #e2e8f0'}}/>
-                    <span style={{fontSize:11,color:'#64748b',fontWeight:600}}>폐기잔재</span>
-                  </div>
-                </div>
-              )}
 
-              {/* 자동배정 원자재 안내 */}
-              {stats.autoBars>0&&(()=>{
-                const autoSummary={};
-                results.bins.filter(b=>b.autoAdded).forEach(b=>{
-                  const key=`${b.series}${b.number}  ${b.length}mm`;
-                  autoSummary[key]=(autoSummary[key]||0)+1;
-                });
-                return(
-                  <div style={{background:'#fffbeb',borderRadius:8,padding:'10px 14px',marginBottom:10,border:'1.5px solid #fde68a'}}>
-                    <div style={{fontWeight:800,color:'#92400e',marginBottom:5,fontSize:12}}>
-                      📦 준비 필요 원자재 (자동 배정)
-                    </div>
-                    <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
-                      {Object.entries(autoSummary).map(([spec,cnt])=>(
-                        <span key={spec} style={{fontSize:13,color:'#78350f',fontFamily:'monospace',fontWeight:700}}>
-                          {spec} × {cnt}개
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
+                      {/* 요약 통계 카드 */}
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6,
+                        background:'#f8fafc',padding:8,border:'1px solid #e2e8f0',borderTop:'none'}}>
+                        {[
+                          ['투입 원자재',`${totalBars}개${autoBars>0?` (자동${autoBars})`:''}`,'#0369a1'],
+                          ['재료 효율',`${eff}%`,parseFloat(eff)>=90?'#059669':parseFloat(eff)>=75?'#d97706':'#dc2626'],
+                          ['총 잔재',`${totalRem.toFixed(0)}mm`,'#64748b'],
+                          ['재사용 잔재',`${reusableBins.length}개 / ${reusableSum.toFixed(0)}mm`,'#d97706'],
+                          ['절단 패턴',`${patterns.length}패턴`,'#7c3aed'],
+                        ].map(([label,val,c])=>(
+                          <div key={label} style={{background:'white',borderRadius:6,padding:'8px 10px',
+                            textAlign:'center',border:'1px solid #e2e8f0'}}>
+                            <div style={{fontSize:10,color:'#94a3b8',fontWeight:700,marginBottom:3}}>{label}</div>
+                            <div style={{fontSize:14,fontWeight:800,color:c}}>{val}</div>
+                          </div>
+                        ))}
+                      </div>
 
-              {/* 패턴별 인포그래픽 바 */}
-              {groupPatterns(results.bins).map((g,pi)=>(
-                <CutBar key={pi} bin={g.bin} count={g.count} colorMap={colorMap}
-                  kerf={settings.kerf} minRemainder={settings.minRemainder} patIdx={pi}/>
-              ))}
-
-              {/* 길이 초과 경고 */}
-              {results.tooLong.length>0&&(
-                <div style={{background:'#fef2f2',borderRadius:8,padding:'10px 14px',marginBottom:10,border:'1px solid #fecaca'}}>
-                  <div style={{fontWeight:800,color:'#dc2626',marginBottom:6,fontSize:13}}>
-                    ⚠️ 표준 원자재({settings.stdLength}mm)보다 큰 절단 요구 {results.tooLong.length}건
-                  </div>
-                  {results.tooLong.map((u,j)=>(
-                    <div key={j} style={{fontSize:12,color:'#991b1b',marginBottom:2}}>
-                      · {u.series}{u.number} 절단길이 {u.cutLen}mm (요구 #{u.reqIdx+1})
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 수량 검증 테이블 */}
-              <div style={{background:'white',borderRadius:8,border:'1px solid #e2e8f0',marginBottom:10,overflow:'hidden'}}>
-                <div style={{background:'#f8fafc',padding:'8px 14px',borderBottom:'1px solid #e2e8f0',
-                  fontWeight:800,fontSize:12,color:'#0f172a'}}>
-                  [ 수량 검증 — 정확 절단 확인 ]
-                </div>
-                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead>
-                    <tr style={{background:'#f8fafc'}}>
-                      {['No','규격','G값 (앞/뒤)','절단길이','실물길이','필요수량','생산수량','차이','상태'].map((h,j)=>(
-                        <th key={j} style={{padding:'6px 10px',textAlign:j<3?'left':'right',
-                          fontWeight:700,color:'#64748b',borderBottom:'1px solid #e2e8f0',fontSize:11}}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {verification.map((v,idx)=>{
-                      const ok=v.diff===0;
-                      return(
-                        <tr key={idx} style={{borderBottom:'1px solid #f1f5f9',
-                          background:ok?(idx%2===0?'white':'#fafafa'):'#fef2f2'}}>
-                          <td style={{padding:'5px 10px',color:'#94a3b8'}}>{idx+1}</td>
-                          <td style={{padding:'5px 10px'}}>
-                            <div style={{display:'flex',alignItems:'center',gap:6}}>
-                              <div style={{width:10,height:10,borderRadius:2,
-                                background:colorMap[`${v.series}${v.number}-${v.cutLength}`]||'#94a3b8'}}/>
-                              <span style={{fontWeight:800,color:SERIES_COLORS[v.series],fontFamily:'monospace'}}>
-                                {v.series}{v.number}-{v.cutLength}L
+                      {/* 색상 범례 */}
+                      <div style={{background:'white',padding:'7px 12px',
+                        border:'1px solid #e2e8f0',borderTop:'none',
+                        display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
+                        <span style={{fontSize:11,fontWeight:700,color:'#64748b'}}>색상 범례 ▶</span>
+                        {specCutReqs.map((cr,ci)=>{
+                          const ck=`${cr.series}${cr.number}-${cr.cutLength}`;
+                          const c2=colorMap[ck]||'#94a3b8';
+                          return(
+                            <div key={ci} style={{display:'flex',alignItems:'center',gap:4}}>
+                              <div style={{width:18,height:12,borderRadius:2,background:c2}}/>
+                              <span style={{fontSize:11,color:'#334155',fontFamily:'monospace',fontWeight:600}}>
+                                {cr.cutLength}L (앞{cr.frontG}/뒤{cr.backG})
                               </span>
                             </div>
-                          </td>
-                          <td style={{padding:'5px 10px',fontFamily:'monospace',color:'#64748b'}}>
-                            ({v.frontG}/{v.backG})
-                          </td>
-                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.cutLength}</td>
-                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(v.cutLength)}</td>
-                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace'}}>{v.required}</td>
-                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.produced}</td>
-                          <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',
-                            color:v.diff===0?'#059669':v.diff>0?'#2563eb':'#dc2626',fontWeight:700}}>
-                            {v.diff>0?'+':''}{v.diff}
-                          </td>
-                          <td style={{padding:'5px 10px',textAlign:'right'}}>
-                            <span style={{
-                              background:ok?'#dcfce7':'#fef2f2',
-                              color:ok?'#166534':'#dc2626',
-                              fontSize:11,fontWeight:800,borderRadius:4,padding:'2px 8px',
-                            }}>
-                              {ok?'✓ 정확':'✗ 불일치'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          );
+                        })}
+                        {reusableBins.length>0&&(
+                          <div style={{display:'flex',alignItems:'center',gap:4}}>
+                            <div style={{width:18,height:12,borderRadius:2,background:'#fef9c3',border:'1px solid #fde68a'}}/>
+                            <span style={{fontSize:11,color:'#92400e',fontWeight:600}}>★재사용가능</span>
+                          </div>
+                        )}
+                        <div style={{display:'flex',alignItems:'center',gap:4}}>
+                          <div style={{width:18,height:12,borderRadius:2,background:'#f1f5f9',border:'1px solid #e2e8f0'}}/>
+                          <span style={{fontSize:11,color:'#94a3b8',fontWeight:600}}>폐기잔재</span>
+                        </div>
+                      </div>
 
-              <button onClick={()=>window.print()}
-                style={{width:'100%',padding:11,fontSize:14,fontWeight:700,border:'none',
-                  borderRadius:8,background:'#1e293b',color:'white',cursor:'pointer'}}>
-                🖨 인쇄
-              </button>
-            </div>
-          )
+                      {/* 자동배정 안내 */}
+                      {autoBars>0&&(
+                        <div style={{background:'#fffbeb',padding:'8px 12px',
+                          border:'1px solid #fde68a',borderTop:'none'}}>
+                          <span style={{fontSize:11,fontWeight:800,color:'#92400e'}}>📦 준비 필요: </span>
+                          {Object.entries(autoSummary).map(([spec,cnt])=>(
+                            <span key={spec} style={{fontSize:12,color:'#78350f',fontFamily:'monospace',fontWeight:700,marginRight:12}}>
+                              {spec} × {cnt}개
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 패턴별 인포그래픽 바 */}
+                      <div style={{border:'1px solid #e2e8f0',borderTop:'none',borderRadius:'0 0 0 0'}}>
+                        {/* 패턴 테이블 헤더 */}
+                        <div style={{display:'grid',gridTemplateColumns:'60px 50px 1fr 80px 90px',
+                          background:'#f8fafc',borderBottom:'1px solid #e2e8f0',
+                          padding:'5px 12px',gap:8,alignItems:'center'}}>
+                          {['패턴 No','반복(본)','절단 순서 — 왼쪽부터 순서대로 절단 →','사용(mm)','잔재'].map((h,j)=>(
+                            <span key={j} style={{fontSize:10,fontWeight:700,color:'#64748b',
+                              textAlign:j>1?'right':'center'}}>{h}</span>
+                          ))}
+                        </div>
+
+                        {patterns.map((g2,pi)=>{
+                          const bin=g2.bin;
+                          const eff2=bin.effectiveLength;
+                          const reusable=bin.remaining>=n(settings.minRemainder);
+                          const used=eff2-bin.remaining;
+                          return(
+                            <div key={pi} style={{
+                              display:'grid',gridTemplateColumns:'60px 50px 1fr 80px 90px',
+                              gap:8,padding:'6px 12px',alignItems:'center',
+                              borderBottom:'1px solid #f1f5f9',
+                              background:pi%2===0?'white':'#fafafa'}}>
+                              {/* 패턴 번호 */}
+                              <div style={{textAlign:'center'}}>
+                                <span style={{background:'#0f172a',color:'#38bdf8',
+                                  fontWeight:800,fontSize:12,borderRadius:20,
+                                  width:28,height:28,display:'inline-flex',
+                                  alignItems:'center',justifyContent:'center'}}>
+                                  {pi+1}
+                                </span>
+                              </div>
+                              {/* 반복 본수 */}
+                              <div style={{textAlign:'center',fontWeight:800,fontSize:13,color:'#0f172a'}}>
+                                {g2.count}본
+                              </div>
+                              {/* 비주얼 바 */}
+                              <div>
+                                <div style={{display:'flex',height:46,borderRadius:4,
+                                  overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
+                                  {bin.assignments.map((a,j)=>{
+                                    const ck=`${a.series}${a.number}-${a.cutLen}`;
+                                    const c3=colorMap[ck]||'#94a3b8';
+                                    const pct=(a.need/eff2)*100;
+                                    const actual=a.cutLen-n(settings.kerf);
+                                    return(
+                                      <div key={j} style={{width:`${pct}%`,flexShrink:0,
+                                        background:c3,borderRight:'1.5px solid rgba(255,255,255,0.35)',
+                                        display:'flex',flexDirection:'column',alignItems:'center',
+                                        justifyContent:'center',overflow:'hidden'}}
+                                        title={`[${j+1}] ${a.series}${a.number} 절단:${a.cutLen}mm 실물:${actual}mm`}>
+                                        <span style={{fontSize:9,color:'rgba(255,255,255,0.75)',lineHeight:1}}>[{j+1}]</span>
+                                        <span style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.2,
+                                          whiteSpace:'nowrap',overflow:'hidden',maxWidth:'100%',
+                                          textAlign:'center',padding:'0 2px'}}>
+                                          {a.cutLen}L
+                                        </span>
+                                        <span style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1}}>
+                                          실{actual}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                  {bin.remaining>0&&(
+                                    <div style={{flex:1,minWidth:16,
+                                      background:reusable?'#fef9c3':'#f1f5f9',
+                                      display:'flex',flexDirection:'column',
+                                      alignItems:'center',justifyContent:'center',
+                                      borderLeft:'1px dashed #cbd5e1'}}>
+                                      <span style={{fontSize:9,color:reusable?'#92400e':'#94a3b8',
+                                        fontWeight:700,whiteSpace:'nowrap'}}>
+                                        {reusable?'★':''}{bin.remaining.toFixed(0)}mm
+                                      </span>
+                                      <span style={{fontSize:8,color:reusable?'#b45309':'#94a3b8'}}>
+                                        {reusable?'보관':'폐기'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                {/* 효율 미니바 */}
+                                <div style={{height:3,background:'#f1f5f9',borderRadius:2,marginTop:2}}>
+                                  <div style={{height:'100%',borderRadius:2,
+                                    width:`${Math.min(100,(used/eff2*100))}%`,
+                                    background:parseFloat(eff)>=90?'#22c55e':parseFloat(eff)>=75?'#f59e0b':'#ef4444'}}/>
+                                </div>
+                              </div>
+                              {/* 사용량 */}
+                              <div style={{textAlign:'right',fontFamily:'monospace',fontSize:12,fontWeight:700,color:'#0f172a'}}>
+                                {used.toFixed(0)}
+                              </div>
+                              {/* 잔재 */}
+                              <div style={{textAlign:'right',fontFamily:'monospace',fontSize:12,
+                                fontWeight:700,color:reusable?'#d97706':'#ef4444'}}>
+                                {reusable?'★':''}{bin.remaining.toFixed(0)}mm
+                                <span style={{fontSize:10,color:reusable?'#b45309':'#94a3b8',marginLeft:3}}>
+                                  {reusable?'재사용':'폐기'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* 수량 검증 테이블 */}
+                      <div style={{background:'white',border:'1px solid #e2e8f0',
+                        borderTop:'none',borderRadius:'0 0 8px 8px',overflow:'hidden',marginBottom:4}}>
+                        <div style={{background:'#f8fafc',padding:'6px 14px',
+                          borderBottom:'1px solid #e2e8f0',fontSize:11,fontWeight:800,color:'#0f172a'}}>
+                          [ 수량 검증 — 정확 절단 확인 ]
+                        </div>
+                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                          <thead>
+                            <tr style={{background:'#f8fafc'}}>
+                              {['No','규격','G값 (앞/뒤)','절단길이','실물길이','필요수량','생산수량','차이','상태'].map((h,j)=>(
+                                <th key={j} style={{padding:'5px 10px',textAlign:j<3?'left':'right',
+                                  fontWeight:700,color:'#64748b',
+                                  borderBottom:'1px solid #e2e8f0',fontSize:11}}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {specVerify.map((v,vi)=>{
+                              const ok=v.diff===0;
+                              const ck=`${v.series}${v.number}-${v.cutLength}`;
+                              return(
+                                <tr key={vi} style={{borderBottom:'1px solid #f1f5f9',
+                                  background:ok?(vi%2===0?'white':'#fafafa'):'#fef2f2'}}>
+                                  <td style={{padding:'5px 10px',color:'#94a3b8'}}>{vi+1}</td>
+                                  <td style={{padding:'5px 10px'}}>
+                                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                      <div style={{width:10,height:10,borderRadius:2,background:colorMap[ck]||'#94a3b8'}}/>
+                                      <span style={{fontWeight:800,color:col,fontFamily:'monospace'}}>
+                                        {v.series}{v.number}-{v.cutLength}L
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td style={{padding:'5px 10px',fontFamily:'monospace',color:'#64748b'}}>({v.frontG}/{v.backG})</td>
+                                  <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.cutLength}</td>
+                                  <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(v.cutLength)}</td>
+                                  <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace'}}>{v.required}</td>
+                                  <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.produced}</td>
+                                  <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',
+                                    color:ok?'#059669':v.diff>0?'#2563eb':'#dc2626',fontWeight:700}}>
+                                    {v.diff>0?'+':''}{v.diff}
+                                  </td>
+                                  <td style={{padding:'5px 10px',textAlign:'right'}}>
+                                    <span style={{background:ok?'#dcfce7':'#fef2f2',
+                                      color:ok?'#166534':'#dc2626',
+                                      fontSize:11,fontWeight:800,borderRadius:4,padding:'2px 8px'}}>
+                                      {ok?'✓ 정확':'✗ 불일치'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                    </div>
+                  );
+                })}
+
+                {/* 길이 초과 경고 */}
+                {results.tooLong.length>0&&(
+                  <div style={{background:'#fef2f2',borderRadius:8,padding:'10px 14px',
+                    marginBottom:10,border:'1px solid #fecaca'}}>
+                    <div style={{fontWeight:800,color:'#dc2626',marginBottom:6,fontSize:13}}>
+                      ⚠️ 표준 원자재({settings.stdLength}mm)보다 큰 절단 요구 {results.tooLong.length}건
+                    </div>
+                    {results.tooLong.map((u,j)=>(
+                      <div key={j} style={{fontSize:12,color:'#991b1b',marginBottom:2}}>
+                        · {u.series}{u.number} 절단길이 {u.cutLen}mm (요구 #{u.reqIdx+1})
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button onClick={()=>window.print()}
+                  style={{width:'100%',padding:11,fontSize:14,fontWeight:700,border:'none',
+                    borderRadius:8,background:'#1e293b',color:'white',cursor:'pointer'}}>
+                  🖨 인쇄
+                </button>
+              </div>
+            );
+          })()
         )}
 
         {/* ═══ 피치 DB 탭 ═══ */}
