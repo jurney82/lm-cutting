@@ -7,7 +7,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{background:#f1f5f9;}
@@ -409,7 +408,6 @@ function App(){
   const [optSnapshot,setOptSnapshot]=useState(null);   // 최적화 시점 입력 스냅샷 (변경 감지)
   const [history,setHistory]=useState([]);             // 작업 이력 (최근 20건)
   const [showHistory,setShowHistory]=useState(false);
-  const [remnantAdded,setRemnantAdded]=useState({});   // 잔재 재고등록 여부 (패턴 sig 기준)
   const loadedRef=useRef(false);
 
   // ── v8: 자동 복원 (최초 1회) ──
@@ -456,7 +454,7 @@ function App(){
     setRawMats(en.rawMats||[]);
     setCutReqs(en.cutReqs||[]);
     setColorMap(buildColorMap(en.cutReqs||[]));
-    setResults(null);setOptSnapshot(null);setRemnantAdded({});
+    setResults(null);setOptSnapshot(null);
     setShowHistory(false);setTab('input');
   };
   const delHistory=(id2)=>{
@@ -469,7 +467,7 @@ function App(){
   const resetAll=()=>{
     if(!window.confirm('새 작업을 시작합니다.\n원자재·절단요구·결과가 모두 지워집니다. (작업 이력은 유지)'))return;
     setRawMats([]);setCutReqs([]);setResults(null);setColorMap({});
-    setOptSnapshot(null);setRemnantAdded({});setEditingId(null);
+    setOptSnapshot(null);setEditingId(null);
     setRmIn({series:'',number:'',length:'',frontG:'0',backG:'0'});
     setCrIn({series:'',number:'',cutLength:'',frontG:'0',backG:'0',qty:'1'});
     setSettings(s=>({...s,workNo:'',customer:'',workDate:today()}));
@@ -513,58 +511,10 @@ function App(){
     setResults(res);
     setColorMap(cm);
     setOptSnapshot(makeSig(rawMats,cutReqs));  // v8: 변경 감지용 스냅샷
-    setRemnantAdded({});
     pushHistory();                              // v8: 작업 이력 자동 저장
     setTab('result');
   };
 
-  // ── v8: 엑셀 내보내기 ──
-  const exportExcel=()=>{
-    if(!results)return;
-    if(typeof XLSX==='undefined'){alert('엑셀 라이브러리 로딩에 실패했습니다. 인터넷 연결을 확인해주세요.');return;}
-    const aoa=[];
-    aoa.push(['절단 작업 지시서  |  태광베어링']);
-    aoa.push(['작업번호',settings.workNo||'-','작업일',settings.workDate,'담당자',settings.worker||'-','거래처',settings.customer||'-']);
-    aoa.push(['절단날 손실',n(settings.kerf)+'mm','최소 재사용 잔재',n(settings.minRemainder)+'mm','표준 원자재',n(settings.stdLength)+'mm']);
-    aoa.push([]);
-    const sgs=[];
-    results.bins.forEach(bin=>{
-      let g=sgs.find(x=>x.specKey===bin.specKey);
-      if(!g){g={specKey:bin.specKey,series:bin.series,number:bin.number,bins:[]};sgs.push(g);}
-      g.bins.push(bin);
-    });
-    sgs.forEach(sg=>{
-      const pitch=PITCH_DB[sg.series]?.[sg.number]||'-';
-      aoa.push([`■ ${sg.series}${sg.number}`,`원자재 ${sg.bins[0].length}mm`,`피치 ${pitch}mm`,`총 ${sg.bins.length}본 투입`]);
-      aoa.push(['패턴','반복(본)','절단 순서 (왼쪽부터 / 절단길이 기준)','사용(mm)','잔재(mm)','잔재 구분','완료 확인 □']);
-      groupPatterns(sg.bins).forEach((g2,pi)=>{
-        const bin=g2.bin;
-        const seq=bin.assignments.map((a,j)=>`${j+1}) ${a.cutLen}L`).join(' → ');
-        const reusable=bin.remaining>=n(settings.minRemainder);
-        aoa.push([pi+1,g2.count,seq,Math.round(bin.effectiveLength-bin.remaining),Math.round(bin.remaining),reusable?'★재사용 보관':'폐기','']);
-      });
-      aoa.push([]);
-      aoa.push(['[수량 검증]']);
-      aoa.push(['규격','절단길이','앞G','뒤G','실물길이','필요','생산','차이','상태']);
-      cutReqs.forEach((cr,ri)=>{
-        if(`${cr.series}${cr.number}`!==sg.specKey)return;
-        const required=ni(cr.qty)||1;
-        const produced=results.bins.reduce((s,b)=>s+b.assignments.filter(a=>a.reqIdx===ri).length,0);
-        aoa.push([`${cr.series}${cr.number}-${cr.cutLength}L`,n(cr.cutLength),n(cr.frontG),n(cr.backG),physLen(cr.cutLength),required,produced,produced-required,produced===required?'✓ 정확':'✗ 불일치']);
-      });
-      aoa.push([]);
-    });
-    if(results.tooLong.length>0){
-      aoa.push(['⚠ 표준 원자재 초과 절단요구 (별도 처리 필요)']);
-      results.tooLong.forEach(u=>aoa.push([`${u.series}${u.number}`,u.cutLen+'mm']));
-      aoa.push([]);
-    }
-    const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols']=[{wch:16},{wch:12},{wch:62},{wch:10},{wch:10},{wch:12},{wch:10},{wch:8},{wch:10}];
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'작업지시서');
-    XLSX.writeFile(wb,`절단작업지시서_${settings.workNo||settings.workDate}.xlsx`);
-  };
 
   // 결과 통계
   const stats=results?{
@@ -1282,29 +1232,6 @@ function App(){
                                 <span style={{fontSize:10,color:reusable?'#b45309':'#94a3b8',marginLeft:3}}>
                                   {reusable?'재사용':'폐기'}
                                 </span>
-                                {reusable&&(
-                                  <div className="no-print" style={{marginTop:3}}>
-                                    <button disabled={!!remnantAdded[g2.sig]}
-                                      title={`잔재 ${Math.floor(bin.remaining)}mm × ${g2.count}개를 원자재 목록에 추가합니다.\n(G값은 0으로 등록 — 잔재 홀 위치에 따라 입력 탭에서 수정)`}
-                                      onClick={()=>{
-                                        if(remnantAdded[g2.sig])return;
-                                        const rows=Array.from({length:g2.count}).map(()=>({
-                                          id:uid(),series:bin.series,number:String(bin.number),
-                                          length:String(Math.floor(bin.remaining)),frontG:'0',backG:'0'}));
-                                        const newRaw=[...rawMats,...rows];
-                                        setRawMats(newRaw);
-                                        setOptSnapshot(makeSig(newRaw,cutReqs)); // 재고등록은 변경경고 제외
-                                        setRemnantAdded(p=>({...p,[g2.sig]:true}));
-                                      }}
-                                      style={{fontSize:10,fontWeight:700,borderRadius:4,padding:'2px 7px',
-                                        cursor:remnantAdded[g2.sig]?'default':'pointer',
-                                        border:remnantAdded[g2.sig]?'1px solid #bbf7d0':'1px solid #fcd34d',
-                                        background:remnantAdded[g2.sig]?'#f0fdf4':'#fffbeb',
-                                        color:remnantAdded[g2.sig]?'#15803d':'#92400e'}}>
-                                      {remnantAdded[g2.sig]?`✓ 등록됨 (${g2.count})`:`＋재고 등록 ×${g2.count}`}
-                                    </button>
-                                  </div>
-                                )}
                               </div>
                               {/* v8: 인쇄용 완료 체크박스 */}
                               <div className="print-only" style={{gridColumn:'1 / -1',padding:'2px 0 6px 68px'}}>
@@ -1397,14 +1324,9 @@ function App(){
 
                 <div className="no-print" style={{display:'flex',gap:8}}>
                   <button onClick={()=>window.print()}
-                    style={{flex:2,padding:11,fontSize:14,fontWeight:700,border:'none',
+                    style={{flex:3,padding:11,fontSize:14,fontWeight:700,border:'none',
                       borderRadius:8,background:'#1e293b',color:'white',cursor:'pointer'}}>
                     🖨 현장용 인쇄
-                  </button>
-                  <button onClick={exportExcel}
-                    style={{flex:2,padding:11,fontSize:14,fontWeight:700,border:'none',
-                      borderRadius:8,background:'#15803d',color:'white',cursor:'pointer'}}>
-                    📥 엑셀 다운로드
                   </button>
                   <button onClick={resetAll}
                     style={{flex:1,padding:11,fontSize:14,fontWeight:700,
