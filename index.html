@@ -3,18 +3,34 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>LM 가이드 레일 절단 최적화 v7</title>
+  <title>LM 가이드 레일 절단 최적화 v8</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{background:#f1f5f9;}
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button{opacity:1;}
+    .print-only{display:none;}
     @media print{
       .no-print{display:none!important;}
+      .print-only{display:block!important;}
       body{background:white;}
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      /* 현장 가독성: 절단 바 확대 */
+      .p-bar{height:68px!important;}
+      .p-cutlen{font-size:17px!important;font-weight:900!important;}
+      .p-seg-sub{font-size:11px!important;}
+      .p-patnum{width:34px!important;height:34px!important;font-size:16px!important;
+        background:white!important;color:#000!important;border:2.5px solid #000!important;}
+      .p-count{font-size:18px!important;color:#000!important;}
+      .p-rem{font-size:15px!important;color:#000!important;}
+      .p-seg{border-right:2px solid #000!important;}
+      .p-verify td,.p-verify th{font-size:13px!important;padding:7px 10px!important;}
+      .p-pattern-row{page-break-inside:avoid;border-bottom:1.5px solid #000!important;}
+      .p-spec-section{page-break-inside:avoid;}
     }
   </style>
 </head>
@@ -89,7 +105,7 @@
 
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useRef } = React;
+    const { useState, useRef, useEffect } = React;
 
 // ── 피치 DB ──────────────────────────────────────────────
 const PITCH_DB = {
@@ -389,6 +405,78 @@ function App(){
   const [rmIn,setRmIn]=useState({series:'',number:'',length:'',frontG:'0',backG:'0'});
   const [crIn,setCrIn]=useState({series:'',number:'',cutLength:'',frontG:'0',backG:'0',qty:'1'});
 
+  // ── v8: 신규 상태 ──
+  const [optSnapshot,setOptSnapshot]=useState(null);   // 최적화 시점 입력 스냅샷 (변경 감지)
+  const [history,setHistory]=useState([]);             // 작업 이력 (최근 20건)
+  const [showHistory,setShowHistory]=useState(false);
+  const [remnantAdded,setRemnantAdded]=useState({});   // 잔재 재고등록 여부 (패턴 sig 기준)
+  const loadedRef=useRef(false);
+
+  // ── v8: 자동 복원 (최초 1회) ──
+  useEffect(()=>{
+    try{
+      const d=JSON.parse(localStorage.getItem('lmcut_draft')||'null');
+      if(d){
+        if(d.settings)setSettings(s=>({...s,...d.settings}));
+        if(Array.isArray(d.rawMats))setRawMats(d.rawMats);
+        if(Array.isArray(d.cutReqs)){setCutReqs(d.cutReqs);setColorMap(buildColorMap(d.cutReqs));}
+      }
+      const h=JSON.parse(localStorage.getItem('lmcut_history')||'[]');
+      if(Array.isArray(h))setHistory(h);
+    }catch(e){}
+    loadedRef.current=true;
+  },[]);
+
+  // ── v8: 입력 자동 저장 ──
+  useEffect(()=>{
+    if(!loadedRef.current)return;
+    try{localStorage.setItem('lmcut_draft',JSON.stringify({settings,rawMats,cutReqs}));}catch(e){}
+  },[settings,rawMats,cutReqs]);
+
+  // ── v8: 입력 변경 감지 ──
+  const makeSig=(rm2,cr2)=>JSON.stringify({rm:rm2,cr:cr2,k:settings.kerf,m:settings.minRemainder,s:settings.stdLength});
+  const inputSig=makeSig(rawMats,cutReqs);
+  const isStale=!!results&&optSnapshot!==null&&optSnapshot!==inputSig;
+
+  // ── v8: 작업 이력 저장/불러오기/삭제 ──
+  const pushHistory=()=>{
+    try{
+      const entry={id:uid(),savedAt:new Date().toLocaleString('ko-KR',{hour12:false}),
+        workNo:settings.workNo,customer:settings.customer,workDate:settings.workDate,
+        settings:{...settings},rawMats:JSON.parse(JSON.stringify(rawMats)),
+        cutReqs:JSON.parse(JSON.stringify(cutReqs)),
+        reqCount:cutReqs.length,totalQty:cutReqs.reduce((s,c)=>s+(ni(c.qty)||1),0)};
+      const h=[entry,...history].slice(0,20);
+      setHistory(h);
+      localStorage.setItem('lmcut_history',JSON.stringify(h));
+    }catch(e){}
+  };
+  const loadHistory=(en)=>{
+    setSettings(s=>({...s,...en.settings}));
+    setRawMats(en.rawMats||[]);
+    setCutReqs(en.cutReqs||[]);
+    setColorMap(buildColorMap(en.cutReqs||[]));
+    setResults(null);setOptSnapshot(null);setRemnantAdded({});
+    setShowHistory(false);setTab('input');
+  };
+  const delHistory=(id2)=>{
+    const h=history.filter(x=>x.id!==id2);
+    setHistory(h);
+    try{localStorage.setItem('lmcut_history',JSON.stringify(h));}catch(e){}
+  };
+
+  // ── v8: 전체 초기화 (새 작업) ──
+  const resetAll=()=>{
+    if(!window.confirm('새 작업을 시작합니다.\n원자재·절단요구·결과가 모두 지워집니다. (작업 이력은 유지)'))return;
+    setRawMats([]);setCutReqs([]);setResults(null);setColorMap({});
+    setOptSnapshot(null);setRemnantAdded({});setEditingId(null);
+    setRmIn({series:'',number:'',length:'',frontG:'0',backG:'0'});
+    setCrIn({series:'',number:'',cutLength:'',frontG:'0',backG:'0',qty:'1'});
+    setSettings(s=>({...s,workNo:'',customer:'',workDate:today()}));
+    setTab('input');
+    try{localStorage.removeItem('lmcut_draft');}catch(e){}
+  };
+
   const rmLenRef=useRef(); const rmFGRef=useRef(); const rmBGRef=useRef();
   const crLenRef=useRef(); const crFGRef=useRef(); const crBGRef=useRef(); const crQtyRef=useRef();
 
@@ -424,7 +512,58 @@ function App(){
     const cm=buildColorMap(cutReqs);
     setResults(res);
     setColorMap(cm);
+    setOptSnapshot(makeSig(rawMats,cutReqs));  // v8: 변경 감지용 스냅샷
+    setRemnantAdded({});
+    pushHistory();                              // v8: 작업 이력 자동 저장
     setTab('result');
+  };
+
+  // ── v8: 엑셀 내보내기 ──
+  const exportExcel=()=>{
+    if(!results)return;
+    if(typeof XLSX==='undefined'){alert('엑셀 라이브러리 로딩에 실패했습니다. 인터넷 연결을 확인해주세요.');return;}
+    const aoa=[];
+    aoa.push(['절단 작업 지시서  |  태광베어링']);
+    aoa.push(['작업번호',settings.workNo||'-','작업일',settings.workDate,'담당자',settings.worker||'-','거래처',settings.customer||'-']);
+    aoa.push(['절단날 손실',n(settings.kerf)+'mm','최소 재사용 잔재',n(settings.minRemainder)+'mm','표준 원자재',n(settings.stdLength)+'mm']);
+    aoa.push([]);
+    const sgs=[];
+    results.bins.forEach(bin=>{
+      let g=sgs.find(x=>x.specKey===bin.specKey);
+      if(!g){g={specKey:bin.specKey,series:bin.series,number:bin.number,bins:[]};sgs.push(g);}
+      g.bins.push(bin);
+    });
+    sgs.forEach(sg=>{
+      const pitch=PITCH_DB[sg.series]?.[sg.number]||'-';
+      aoa.push([`■ ${sg.series}${sg.number}`,`원자재 ${sg.bins[0].length}mm`,`피치 ${pitch}mm`,`총 ${sg.bins.length}본 투입`]);
+      aoa.push(['패턴','반복(본)','절단 순서 (왼쪽부터 / 절단길이 기준)','사용(mm)','잔재(mm)','잔재 구분','완료 확인 □']);
+      groupPatterns(sg.bins).forEach((g2,pi)=>{
+        const bin=g2.bin;
+        const seq=bin.assignments.map((a,j)=>`${j+1}) ${a.cutLen}L`).join(' → ');
+        const reusable=bin.remaining>=n(settings.minRemainder);
+        aoa.push([pi+1,g2.count,seq,Math.round(bin.effectiveLength-bin.remaining),Math.round(bin.remaining),reusable?'★재사용 보관':'폐기','']);
+      });
+      aoa.push([]);
+      aoa.push(['[수량 검증]']);
+      aoa.push(['규격','절단길이','앞G','뒤G','실물길이','필요','생산','차이','상태']);
+      cutReqs.forEach((cr,ri)=>{
+        if(`${cr.series}${cr.number}`!==sg.specKey)return;
+        const required=ni(cr.qty)||1;
+        const produced=results.bins.reduce((s,b)=>s+b.assignments.filter(a=>a.reqIdx===ri).length,0);
+        aoa.push([`${cr.series}${cr.number}-${cr.cutLength}L`,n(cr.cutLength),n(cr.frontG),n(cr.backG),physLen(cr.cutLength),required,produced,produced-required,produced===required?'✓ 정확':'✗ 불일치']);
+      });
+      aoa.push([]);
+    });
+    if(results.tooLong.length>0){
+      aoa.push(['⚠ 표준 원자재 초과 절단요구 (별도 처리 필요)']);
+      results.tooLong.forEach(u=>aoa.push([`${u.series}${u.number}`,u.cutLen+'mm']));
+      aoa.push([]);
+    }
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:16},{wch:12},{wch:62},{wch:10},{wch:10},{wch:12},{wch:10},{wch:8},{wch:10}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'작업지시서');
+    XLSX.writeFile(wb,`절단작업지시서_${settings.workNo||settings.workDate}.xlsx`);
   };
 
   // 결과 통계
@@ -455,30 +594,41 @@ function App(){
     <div style={{fontFamily:'"Pretendard","Apple SD Gothic Neo",sans-serif',background:'#f1f5f9',minHeight:'100vh'}}>
 
       {/* 헤더 */}
-      <div style={{background:'#0f172a',color:'white',padding:'11px 16px',
+      <div className="no-print" style={{background:'#0f172a',color:'white',padding:'11px 16px',
         display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div>
           <div style={{fontSize:15,fontWeight:800,letterSpacing:'-0.5px'}}>
             LM 가이드 레일 절단 최적화{' '}
-            <span style={{fontSize:11,color:'#38bdf8',fontWeight:600}}>v7</span>
+            <span style={{fontSize:11,color:'#38bdf8',fontWeight:600}}>v8</span>
           </div>
           <div style={{fontSize:10,color:'#64748b',marginTop:1}}>
             HSR · SR · SHS · SRS · SRSW | FFD + 원자재 자동 배정 | 대구·경북
           </div>
         </div>
-        <div style={{fontSize:11,color:'#475569',textAlign:'right'}}>
-          원자재 {rawMats.length}종 · 절단요구 {cutReqs.length}종
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{fontSize:11,color:'#475569',textAlign:'right'}}>
+            원자재 {rawMats.length}종 · 절단요구 {cutReqs.length}종
+          </div>
+          <button onClick={resetAll}
+            title="원자재·절단요구·결과를 모두 비우고 새 작업 시작"
+            style={{background:'#1e293b',color:'#f87171',border:'1px solid #334155',
+              borderRadius:6,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+            🗑 새 작업
+          </button>
         </div>
       </div>
 
       {/* 탭 */}
-      <div style={{background:'#1e293b',display:'flex',padding:'0 8px',gap:2}}>
+      <div className="no-print" style={{background:'#1e293b',display:'flex',padding:'0 8px',gap:2}}>
         {[['input','① 입력'],['result','② 결과 / 작업지시서'],['pitch','피치 DB']].map(([k,label])=>(
           <button key={k} onClick={()=>setTab(k)} style={{
             padding:'8px 14px',fontSize:12,fontWeight:600,border:'none',cursor:'pointer',
             background:'none',color:tab===k?'white':'#64748b',
             borderBottom:tab===k?'2.5px solid #38bdf8':'2.5px solid transparent',
-          }}>{label}</button>
+            position:'relative',
+          }}>{label}{k==='result'&&isStale&&<span title="입력이 변경됨 — 재실행 필요" style={{
+            display:'inline-block',width:7,height:7,borderRadius:'50%',
+            background:'#f59e0b',marginLeft:5,verticalAlign:'middle'}}/>}</button>
         ))}
       </div>
 
@@ -486,6 +636,45 @@ function App(){
 
         {/* ═══ 입력 탭 ═══ */}
         {tab==='input'&&<>
+
+          {/* v8: 작업 이력 */}
+          {history.length>0&&(
+            <div style={{background:'white',borderRadius:8,marginBottom:10,border:'1px solid #e2e8f0',overflow:'hidden'}}>
+              <button onClick={()=>setShowHistory(v=>!v)}
+                style={{width:'100%',background:'none',border:'none',cursor:'pointer',
+                  padding:'9px 12px',display:'flex',alignItems:'center',gap:8,textAlign:'left'}}>
+                <span style={{fontSize:11,fontWeight:800,color:'#94a3b8',letterSpacing:'1px'}}>
+                  📂 작업 이력 ({history.length}건)
+                </span>
+                <span style={{fontSize:10,color:'#cbd5e1'}}>최적화 실행 시 자동 저장 · 최근 20건</span>
+                <span style={{marginLeft:'auto',fontSize:11,color:'#64748b'}}>{showHistory?'▲ 접기':'▼ 펼치기'}</span>
+              </button>
+              {showHistory&&(
+                <div style={{borderTop:'1px solid #f1f5f9',maxHeight:240,overflowY:'auto'}}>
+                  {history.map((en,hi)=>(
+                    <div key={en.id} style={{display:'flex',alignItems:'center',gap:10,
+                      padding:'6px 12px',borderBottom:'1px solid #f8fafc',
+                      background:hi%2===0?'white':'#fafafa',fontSize:12}}>
+                      <span style={{color:'#94a3b8',fontSize:11,width:120,flexShrink:0}}>{en.savedAt}</span>
+                      <span style={{fontFamily:'monospace',fontWeight:700,color:'#0f172a'}}>
+                        {en.workNo||'(작업번호 없음)'}
+                      </span>
+                      <span style={{color:'#64748b'}}>{en.customer||''}</span>
+                      <span style={{color:'#94a3b8',fontSize:11}}>절단 {en.reqCount}종 / {en.totalQty}EA</span>
+                      <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+                        <button onClick={()=>loadHistory(en)}
+                          style={{background:'#0369a1',color:'white',border:'none',borderRadius:4,
+                            padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>불러오기</button>
+                        <button onClick={()=>delHistory(en.id)}
+                          style={{background:'none',border:'1px solid #e2e8f0',color:'#ef4444',
+                            borderRadius:4,padding:'3px 7px',fontSize:11,cursor:'pointer'}}>삭제</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 기본 설정 */}
           <div style={{background:'white',borderRadius:8,padding:'10px 12px',marginBottom:10,border:'1px solid #e2e8f0'}}>
@@ -557,6 +746,20 @@ function App(){
                     onChange={e=>setRmIn(p=>({...p,length:e.target.value}))}
                     onKeyDown={e=>{if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();rmFGRef.current?.focus();rmFGRef.current?.select();}}}
                     style={inp('110px')}/>
+                  <div style={{display:'flex',gap:3,marginTop:4,flexWrap:'wrap'}}>
+                    {[3000,4000,1430,1600,1420].map(L=>(
+                      <button key={L}
+                        onClick={()=>{setRmIn(p=>({...p,length:String(L)}));
+                          setTimeout(()=>{rmFGRef.current?.focus();rmFGRef.current?.select();},30);}}
+                        title={`길이 ${L}mm 바로 입력`}
+                        style={{fontSize:10,padding:'2px 6px',border:'1px solid #bae6fd',
+                          background:rmIn.length===String(L)?'#0369a1':'#f0f9ff',
+                          color:rmIn.length===String(L)?'white':'#0369a1',
+                          borderRadius:4,cursor:'pointer',fontFamily:'monospace',fontWeight:700}}>
+                        {L}
+                      </button>
+                    ))}
+                  </div>
                 </Field>
                 <Field label="앞 G (mm)" w="70px">
                   <input ref={rmFGRef} type="number" value={rmIn.frontG}
@@ -808,8 +1011,46 @@ function App(){
 
             return(
               <div>
-                {/* 작업지시서 헤더 */}
-                <div style={{background:'#0f172a',borderRadius:8,padding:'10px 14px',marginBottom:10,color:'white'}}>
+                {/* v8: 입력 변경 경고 */}
+                {isStale&&(
+                  <div className="no-print" style={{background:'#fffbeb',border:'1.5px solid #f59e0b',
+                    borderRadius:8,padding:'9px 14px',marginBottom:10,
+                    display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                    <span style={{fontSize:12,fontWeight:800,color:'#92400e'}}>
+                      ⚠ 입력이 변경되었습니다 — 아래 결과는 이전 입력 기준입니다
+                    </span>
+                    <button onClick={handleOptimize}
+                      style={{marginLeft:'auto',background:'#f59e0b',color:'white',border:'none',
+                        borderRadius:6,padding:'5px 14px',fontSize:12,fontWeight:800,cursor:'pointer'}}>
+                      ↻ 다시 최적화
+                    </button>
+                  </div>
+                )}
+
+                {/* v8: 현장용 인쇄 전용 헤더 */}
+                <div className="print-only" style={{marginBottom:14}}>
+                  <div style={{fontSize:26,fontWeight:900,color:'#000',
+                    borderBottom:'3px solid #000',paddingBottom:6,marginBottom:10,letterSpacing:'-0.5px'}}>
+                    절단 작업 지시서
+                    <span style={{float:'right',fontSize:13,fontWeight:700,color:'#555',paddingTop:12}}>태광베어링</span>
+                  </div>
+                  <table style={{width:'100%',borderCollapse:'collapse',marginBottom:4}}>
+                    <tbody><tr>
+                      {[['작업번호',settings.workNo||'—'],['작업일',settings.workDate],
+                        ['담당자',settings.worker||'—'],['거래처',settings.customer||'—'],
+                        ['절단날 손실',settings.kerf+'mm'],['작업자 확인','　　　(인)'],
+                      ].map(([k2,v2])=>(
+                        <td key={k2} style={{border:'1.5px solid #000',padding:'6px 10px',verticalAlign:'top'}}>
+                          <div style={{fontSize:10,fontWeight:700,color:'#555',marginBottom:2}}>{k2}</div>
+                          <div style={{fontSize:16,fontWeight:800,color:'#000',fontFamily:'monospace'}}>{v2}</div>
+                        </td>
+                      ))}
+                    </tr></tbody>
+                  </table>
+                </div>
+
+                {/* 작업지시서 헤더 (화면용) */}
+                <div className="no-print" style={{background:'#0f172a',borderRadius:8,padding:'10px 14px',marginBottom:10,color:'white'}}>
                   <div style={{fontSize:13,fontWeight:800,marginBottom:5}}>■ 절단 작업 지시서</div>
                   <div style={{display:'flex',gap:14,fontSize:11,color:'#94a3b8',flexWrap:'wrap'}}>
                     {[['작업번호',settings.workNo||'—'],['작업일',settings.workDate],
@@ -858,7 +1099,7 @@ function App(){
                   });
 
                   return(
-                    <div key={sg.specKey} style={{marginBottom:20}}>
+                    <div key={sg.specKey} className="p-spec-section" style={{marginBottom:20}}>
 
                       {/* 규격 헤더 바 */}
                       <div style={{background:'#1e3a5f',borderRadius:'8px 8px 0 0',
@@ -962,14 +1203,14 @@ function App(){
                           const reusable=bin.remaining>=n(settings.minRemainder);
                           const used=eff2-bin.remaining;
                           return(
-                            <div key={pi} style={{
+                            <div key={pi} className="p-pattern-row" style={{
                               display:'grid',gridTemplateColumns:'60px 50px 1fr 80px 90px',
                               gap:8,padding:'6px 12px',alignItems:'center',
                               borderBottom:'1px solid #f1f5f9',
                               background:pi%2===0?'white':'#fafafa'}}>
                               {/* 패턴 번호 */}
                               <div style={{textAlign:'center'}}>
-                                <span style={{background:'#0f172a',color:'#38bdf8',
+                                <span className="p-patnum" style={{background:'#0f172a',color:'#38bdf8',
                                   fontWeight:800,fontSize:12,borderRadius:20,
                                   width:28,height:28,display:'inline-flex',
                                   alignItems:'center',justifyContent:'center'}}>
@@ -977,12 +1218,12 @@ function App(){
                                 </span>
                               </div>
                               {/* 반복 본수 */}
-                              <div style={{textAlign:'center',fontWeight:800,fontSize:13,color:'#0f172a'}}>
+                              <div className="p-count" style={{textAlign:'center',fontWeight:800,fontSize:13,color:'#0f172a'}}>
                                 {g2.count}본
                               </div>
                               {/* 비주얼 바 */}
                               <div>
-                                <div style={{display:'flex',height:46,borderRadius:4,
+                                <div className="p-bar" style={{display:'flex',height:46,borderRadius:4,
                                   overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
                                   {bin.assignments.map((a,j)=>{
                                     const ck=`${a.series}${a.number}-${a.cutLen}`;
@@ -990,18 +1231,18 @@ function App(){
                                     const pct=(a.need/eff2)*100;
                                     const actual=a.cutLen-n(settings.kerf);
                                     return(
-                                      <div key={j} style={{width:`${pct}%`,flexShrink:0,
+                                      <div key={j} className="p-seg" style={{width:`${pct}%`,flexShrink:0,
                                         background:c3,borderRight:'1.5px solid rgba(255,255,255,0.35)',
                                         display:'flex',flexDirection:'column',alignItems:'center',
                                         justifyContent:'center',overflow:'hidden'}}
                                         title={`[${j+1}] ${a.series}${a.number} 절단:${a.cutLen}mm 실물:${actual}mm`}>
-                                        <span style={{fontSize:9,color:'rgba(255,255,255,0.75)',lineHeight:1}}>[{j+1}]</span>
-                                        <span style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.2,
+                                        <span className="p-seg-sub" style={{fontSize:9,color:'rgba(255,255,255,0.75)',lineHeight:1}}>[{j+1}]</span>
+                                        <span className="p-cutlen" style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.2,
                                           whiteSpace:'nowrap',overflow:'hidden',maxWidth:'100%',
                                           textAlign:'center',padding:'0 2px'}}>
                                           {a.cutLen}L
                                         </span>
-                                        <span style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1}}>
+                                        <span className="p-seg-sub" style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1}}>
                                           실{actual}
                                         </span>
                                       </div>
@@ -1035,12 +1276,44 @@ function App(){
                                 {used.toFixed(0)}
                               </div>
                               {/* 잔재 */}
-                              <div style={{textAlign:'right',fontFamily:'monospace',fontSize:12,
+                              <div className="p-rem" style={{textAlign:'right',fontFamily:'monospace',fontSize:12,
                                 fontWeight:700,color:reusable?'#d97706':'#ef4444'}}>
                                 {reusable?'★':''}{bin.remaining.toFixed(0)}mm
                                 <span style={{fontSize:10,color:reusable?'#b45309':'#94a3b8',marginLeft:3}}>
                                   {reusable?'재사용':'폐기'}
                                 </span>
+                                {reusable&&(
+                                  <div className="no-print" style={{marginTop:3}}>
+                                    <button disabled={!!remnantAdded[g2.sig]}
+                                      title={`잔재 ${Math.floor(bin.remaining)}mm × ${g2.count}개를 원자재 목록에 추가합니다.\n(G값은 0으로 등록 — 잔재 홀 위치에 따라 입력 탭에서 수정)`}
+                                      onClick={()=>{
+                                        if(remnantAdded[g2.sig])return;
+                                        const rows=Array.from({length:g2.count}).map(()=>({
+                                          id:uid(),series:bin.series,number:String(bin.number),
+                                          length:String(Math.floor(bin.remaining)),frontG:'0',backG:'0'}));
+                                        const newRaw=[...rawMats,...rows];
+                                        setRawMats(newRaw);
+                                        setOptSnapshot(makeSig(newRaw,cutReqs)); // 재고등록은 변경경고 제외
+                                        setRemnantAdded(p=>({...p,[g2.sig]:true}));
+                                      }}
+                                      style={{fontSize:10,fontWeight:700,borderRadius:4,padding:'2px 7px',
+                                        cursor:remnantAdded[g2.sig]?'default':'pointer',
+                                        border:remnantAdded[g2.sig]?'1px solid #bbf7d0':'1px solid #fcd34d',
+                                        background:remnantAdded[g2.sig]?'#f0fdf4':'#fffbeb',
+                                        color:remnantAdded[g2.sig]?'#15803d':'#92400e'}}>
+                                      {remnantAdded[g2.sig]?`✓ 등록됨 (${g2.count})`:`＋재고 등록 ×${g2.count}`}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                              {/* v8: 인쇄용 완료 체크박스 */}
+                              <div className="print-only" style={{gridColumn:'1 / -1',padding:'2px 0 6px 68px'}}>
+                                <span style={{fontSize:12,fontWeight:700,color:'#000',marginRight:8}}>완료 확인 ▶</span>
+                                {Array.from({length:Math.min(g2.count,15)}).map((_,b)=>(
+                                  <span key={b} style={{display:'inline-block',width:17,height:17,
+                                    border:'1.8px solid #000',marginRight:6,verticalAlign:'middle'}}/>
+                                ))}
+                                {g2.count>15&&<span style={{fontSize:12,fontWeight:700,color:'#000'}}> … 총 {g2.count}본</span>}
                               </div>
                             </div>
                           );
@@ -1054,7 +1327,7 @@ function App(){
                           borderBottom:'1px solid #e2e8f0',fontSize:11,fontWeight:800,color:'#0f172a'}}>
                           [ 수량 검증 — 정확 절단 확인 ]
                         </div>
-                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                        <table className="p-verify" style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                           <thead>
                             <tr style={{background:'#f8fafc'}}>
                               {['No','규격','G값 (앞/뒤)','절단길이','실물길이','필요수량','생산수량','차이','상태'].map((h,j)=>(
@@ -1122,11 +1395,24 @@ function App(){
                   </div>
                 )}
 
-                <button onClick={()=>window.print()}
-                  style={{width:'100%',padding:11,fontSize:14,fontWeight:700,border:'none',
-                    borderRadius:8,background:'#1e293b',color:'white',cursor:'pointer'}}>
-                  🖨 인쇄
-                </button>
+                <div className="no-print" style={{display:'flex',gap:8}}>
+                  <button onClick={()=>window.print()}
+                    style={{flex:2,padding:11,fontSize:14,fontWeight:700,border:'none',
+                      borderRadius:8,background:'#1e293b',color:'white',cursor:'pointer'}}>
+                    🖨 현장용 인쇄
+                  </button>
+                  <button onClick={exportExcel}
+                    style={{flex:2,padding:11,fontSize:14,fontWeight:700,border:'none',
+                      borderRadius:8,background:'#15803d',color:'white',cursor:'pointer'}}>
+                    📥 엑셀 다운로드
+                  </button>
+                  <button onClick={resetAll}
+                    style={{flex:1,padding:11,fontSize:14,fontWeight:700,
+                      border:'1.5px solid #fca5a5',borderRadius:8,
+                      background:'white',color:'#dc2626',cursor:'pointer'}}>
+                    🗑 새 작업
+                  </button>
+                </div>
               </div>
             );
           })()
