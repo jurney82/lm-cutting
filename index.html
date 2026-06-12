@@ -1242,7 +1242,7 @@ function App(){
                         <div style={{display:'grid',gridTemplateColumns:'60px 50px 1fr 80px 90px',
                           background:'#f8fafc',borderBottom:'1px solid #e2e8f0',
                           padding:'5px 12px',gap:8,alignItems:'center'}}>
-                          {['패턴 No','반복(본)','절단 순서 — 왼쪽부터 순서대로 절단 →','사용(mm)','잔재'].map((h,j)=>(
+                          {['패턴 No','반복(본)','절단 순서 — 왼쪽부터 순서대로 절단 → (칸 폭은 길이 비례 근사)','사용(mm)','잔재'].map((h,j)=>(
                             <span key={j} style={{fontSize:10,fontWeight:700,color:'#64748b',
                               textAlign:j>1?'right':'center'}}>{h}</span>
                           ))}
@@ -1282,7 +1282,7 @@ function App(){
                                     const pct=(a.need/eff2)*100;
                                     const actual=a.cutLen-n(settings.kerf);
                                     return(
-                                      <div key={j} style={{width:`${pct}%`,flexShrink:0,
+                                      <div key={j} style={{flex:`${Math.max(1,a.need)} 1 36px`,minWidth:0,
                                         background:c3,borderRight:'1.5px solid rgba(255,255,255,0.35)',
                                         display:'flex',flexDirection:'column',alignItems:'center',
                                         justifyContent:'center',overflow:'hidden'}}
@@ -1300,7 +1300,7 @@ function App(){
                                     );
                                   })}
                                   {bin.remaining>0&&(
-                                    <div style={{flex:1,minWidth:16,
+                                    <div style={{flex:`${Math.max(1,bin.remaining)} 1 26px`,minWidth:0,
                                       background:reusable?'#fef9c3':'#f1f5f9',
                                       display:'flex',flexDirection:'column',
                                       alignItems:'center',justifyContent:'center',
@@ -1333,7 +1333,7 @@ function App(){
                                         const pct=(g3.need/eff2)*100;
                                         const actual=g3.cutLen-n(settings.kerf);
                                         return(
-                                          <div key={j} style={{width:`${pct}%`,flexShrink:0,background:c3,
+                                          <div key={j} style={{flex:`${Math.max(1,g3.need)} 1 84px`,minWidth:0,background:c3,
                                             borderRight:'2px solid #000',position:'relative',overflow:'hidden',
                                             display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
                                             {/* CAD식 파단선 (중간 생략) */}
@@ -1356,7 +1356,7 @@ function App(){
                                         );
                                       })}
                                       {bin.remaining>0&&(
-                                        <div style={{flex:1,minWidth:34,
+                                        <div style={{flex:`${Math.max(1,bin.remaining)} 1 48px`,minWidth:0,
                                           background:reusable?'#fef9c3':'#f1f5f9',
                                           display:'flex',flexDirection:'column',
                                           alignItems:'center',justifyContent:'center',
