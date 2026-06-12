@@ -7,26 +7,25 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{background:#f1f5f9;}
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button{opacity:1;}
     .print-only{display:none;}
+    .print-flex{display:none;}
     @media print{
       .no-print{display:none!important;}
       .print-only{display:block!important;}
+      .print-flex{display:flex!important;}
       body{background:white;}
       *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
       /* 현장 가독성: 절단 바 확대 */
-      .p-bar{height:68px!important;}
-      .p-cutlen{font-size:17px!important;font-weight:900!important;}
-      .p-seg-sub{font-size:11px!important;}
       .p-patnum{width:34px!important;height:34px!important;font-size:16px!important;
         background:white!important;color:#000!important;border:2.5px solid #000!important;}
       .p-count{font-size:18px!important;color:#000!important;}
       .p-rem{font-size:15px!important;color:#000!important;}
-      .p-seg{border-right:2px solid #000!important;}
       .p-verify td,.p-verify th{font-size:13px!important;padding:7px 10px!important;}
       .p-pattern-row{page-break-inside:avoid;border-bottom:1.5px solid #000!important;}
       .p-spec-section{page-break-inside:avoid;}
@@ -408,7 +407,34 @@ function App(){
   const [optSnapshot,setOptSnapshot]=useState(null);   // 최적화 시점 입력 스냅샷 (변경 감지)
   const [history,setHistory]=useState([]);             // 작업 이력 (최근 20건)
   const [showHistory,setShowHistory]=useState(false);
+  const [showCompare,setShowCompare]=useState(false);  // v8: 원장 길이 비교 펼침
+  const resultRef=useRef(null);                        // v8: 이미지 저장 캡처 대상
   const loadedRef=useRef(false);
+
+  // ── v8: 결과 화면 이미지 저장 (카톡 전송용) ──
+  const saveImage=async()=>{
+    if(!resultRef.current)return;
+    if(typeof html2canvas==='undefined'){alert('이미지 라이브러리 로딩에 실패했습니다. 인터넷 연결을 확인해주세요.');return;}
+    try{
+      const canvas=await html2canvas(resultRef.current,{
+        scale:2,backgroundColor:'#f1f5f9',
+        ignoreElements:el=>!!(el.classList&&el.classList.contains('img-skip')),
+      });
+      const a=document.createElement('a');
+      a.download=`절단작업지시서_${settings.workNo||settings.workDate}.png`;
+      a.href=canvas.toDataURL('image/png');
+      a.click();
+    }catch(e){alert('이미지 저장 중 오류가 발생했습니다: '+e.message);}
+  };
+
+  // ── v8: 원장 길이 적용 후 즉시 재계산 ──
+  const applyStd=(L)=>{
+    setSettings(s=>({...s,stdLength:String(L)}));
+    const res=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,L);
+    setResults(res);
+    setColorMap(buildColorMap(cutReqs));
+    setOptSnapshot(JSON.stringify({rm:rawMats,cr:cutReqs,k:settings.kerf,m:settings.minRemainder,s:String(L)}));
+  };
 
   // ── v8: 자동 복원 (최초 1회) ──
   useEffect(()=>{
@@ -960,10 +986,10 @@ function App(){
             });
 
             return(
-              <div>
+              <div ref={resultRef}>
                 {/* v8: 입력 변경 경고 */}
                 {isStale&&(
-                  <div className="no-print" style={{background:'#fffbeb',border:'1.5px solid #f59e0b',
+                  <div className="no-print img-skip" style={{background:'#fffbeb',border:'1.5px solid #f59e0b',
                     borderRadius:8,padding:'9px 14px',marginBottom:10,
                     display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                     <span style={{fontSize:12,fontWeight:800,color:'#92400e'}}>
@@ -976,6 +1002,81 @@ function App(){
                     </button>
                   </div>
                 )}
+
+                {/* v8: 원장 길이 비교 (3000 vs 4000) */}
+                <div className="no-print img-skip" style={{background:'white',border:'1px solid #e2e8f0',
+                  borderRadius:8,marginBottom:10,overflow:'hidden'}}>
+                  <button onClick={()=>setShowCompare(v=>!v)}
+                    style={{width:'100%',background:'none',border:'none',cursor:'pointer',
+                      padding:'9px 12px',display:'flex',alignItems:'center',gap:8,textAlign:'left'}}>
+                    <span style={{fontSize:11,fontWeight:800,color:'#94a3b8',letterSpacing:'1px'}}>
+                      📏 원장 길이 비교 (3000 vs 4000)
+                    </span>
+                    <span style={{fontSize:10,color:'#cbd5e1'}}>같은 절단 요구를 원장 길이별로 재계산해 비교</span>
+                    <span style={{marginLeft:'auto',fontSize:11,color:'#64748b'}}>{showCompare?'▲ 접기':'▼ 펼치기'}</span>
+                  </button>
+                  {showCompare&&(()=>{
+                    const minRem=n(settings.minRemainder);
+                    const cmp=[3000,4000].map(L=>{
+                      const r=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,L);
+                      let waste=0,reuse=0,totalIn=0;
+                      r.bins.forEach(b=>{
+                        totalIn+=n(b.length);
+                        if(b.remaining>=minRem)reuse+=b.remaining;else waste+=b.remaining;
+                      });
+                      return{L,bars:r.bins.length,autoCount:r.bins.filter(b=>b.autoAdded).length,
+                        waste:Math.round(waste),reuse:Math.round(reuse),
+                        totalIn:Math.round(totalIn),tooLong:r.tooLong.length};
+                    });
+                    let best=cmp[0];
+                    if(cmp[1].waste<best.waste||(cmp[1].waste===best.waste&&cmp[1].totalIn<best.totalIn))best=cmp[1];
+                    return(
+                      <div style={{borderTop:'1px solid #f1f5f9',padding:'10px 12px'}}>
+                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                          <thead><tr style={{background:'#f8fafc'}}>
+                            {['원장 길이','투입 원장','폐기 잔재','재사용 잔재','총 투입 길이','초과 요구','판정',''].map((h,j)=>(
+                              <th key={j} style={{padding:'5px 10px',textAlign:j===0?'left':'right',
+                                fontWeight:700,color:'#64748b',borderBottom:'1px solid #e2e8f0',fontSize:11}}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {cmp.map(c=>{
+                              const isBest=c.L===best.L;
+                              const isCur=n(settings.stdLength)===c.L;
+                              return(
+                                <tr key={c.L} style={{borderBottom:'1px solid #f1f5f9',background:isBest?'#f0fdf4':'white'}}>
+                                  <td style={{padding:'6px 10px',fontFamily:'monospace',fontWeight:800,fontSize:13}}>
+                                    {c.L}mm {isCur&&<span style={{fontSize:10,color:'#0369a1',fontWeight:700}}>(현재)</span>}
+                                  </td>
+                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{c.bars}개{c.autoCount>0?` (자동 ${c.autoCount})`:''}</td>
+                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#dc2626'}}>{c.waste}mm</td>
+                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',color:'#d97706'}}>{c.reuse}mm</td>
+                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{c.totalIn}mm</td>
+                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',color:c.tooLong>0?'#dc2626':'#94a3b8'}}>{c.tooLong}건</td>
+                                  <td style={{padding:'6px 10px',textAlign:'right'}}>
+                                    {isBest&&<span style={{background:'#dcfce7',color:'#166534',fontSize:11,fontWeight:800,borderRadius:4,padding:'2px 8px'}}>✓ 유리</span>}
+                                  </td>
+                                  <td style={{padding:'6px 10px',textAlign:'right'}}>
+                                    {!isCur&&(
+                                      <button onClick={()=>applyStd(c.L)}
+                                        style={{background:'#0369a1',color:'white',border:'none',borderRadius:4,
+                                          padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                                        이 길이로 재계산
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        <div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>
+                          ※ 폐기 잔재가 적은 쪽을 추천하며, 같으면 총 투입 길이가 적은 쪽을 추천합니다. 직접 입력한 원자재는 양쪽 모두 동일하게 우선 사용됩니다.
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
 
                 {/* v8: 현장용 인쇄 전용 헤더 */}
                 <div className="print-only" style={{marginBottom:14}}>
@@ -1173,7 +1274,7 @@ function App(){
                               </div>
                               {/* 비주얼 바 */}
                               <div>
-                                <div className="p-bar" style={{display:'flex',height:46,borderRadius:4,
+                                <div className="no-print" style={{display:'flex',height:46,borderRadius:4,
                                   overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
                                   {bin.assignments.map((a,j)=>{
                                     const ck=`${a.series}${a.number}-${a.cutLen}`;
@@ -1181,18 +1282,18 @@ function App(){
                                     const pct=(a.need/eff2)*100;
                                     const actual=a.cutLen-n(settings.kerf);
                                     return(
-                                      <div key={j} className="p-seg" style={{width:`${pct}%`,flexShrink:0,
+                                      <div key={j} style={{width:`${pct}%`,flexShrink:0,
                                         background:c3,borderRight:'1.5px solid rgba(255,255,255,0.35)',
                                         display:'flex',flexDirection:'column',alignItems:'center',
                                         justifyContent:'center',overflow:'hidden'}}
                                         title={`[${j+1}] ${a.series}${a.number} 절단:${a.cutLen}mm 실물:${actual}mm`}>
-                                        <span className="p-seg-sub" style={{fontSize:9,color:'rgba(255,255,255,0.75)',lineHeight:1}}>[{j+1}]</span>
-                                        <span className="p-cutlen" style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.2,
+                                        <span style={{fontSize:9,color:'rgba(255,255,255,0.75)',lineHeight:1}}>[{j+1}]</span>
+                                        <span style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.2,
                                           whiteSpace:'nowrap',overflow:'hidden',maxWidth:'100%',
                                           textAlign:'center',padding:'0 2px'}}>
                                           {a.cutLen}L
                                         </span>
-                                        <span className="p-seg-sub" style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1}}>
+                                        <span style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1}}>
                                           실{actual}
                                         </span>
                                       </div>
@@ -1214,8 +1315,65 @@ function App(){
                                     </div>
                                   )}
                                 </div>
+                                {/* v8: 인쇄용 그룹 바 — 동일 길이 묶음(×N본) + 파단선 생략 기호 */}
+                                {(()=>{
+                                  const gs=[];
+                                  bin.assignments.forEach((a,j)=>{
+                                    const last=gs[gs.length-1];
+                                    if(last&&last.cutLen===a.cutLen&&last.series===a.series&&last.number===a.number){
+                                      last.cnt++;last.need+=a.need;last.to=j+1;
+                                    }else gs.push({...a,cnt:1,from:j+1,to:j+1});
+                                  });
+                                  return(
+                                    <div className="print-flex" style={{height:70,overflow:'hidden',
+                                      border:'1.8px solid #000',borderRadius:4}}>
+                                      {gs.map((g3,j)=>{
+                                        const ck=`${g3.series}${g3.number}-${g3.cutLen}`;
+                                        const c3=colorMap[ck]||'#94a3b8';
+                                        const pct=(g3.need/eff2)*100;
+                                        const actual=g3.cutLen-n(settings.kerf);
+                                        return(
+                                          <div key={j} style={{width:`${pct}%`,flexShrink:0,background:c3,
+                                            borderRight:'2px solid #000',position:'relative',overflow:'hidden',
+                                            display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+                                            {/* CAD식 파단선 (중간 생략) */}
+                                            {g3.cnt>1&&(
+                                              <span style={{position:'absolute',left:'76%',top:-5,bottom:-5,width:13,
+                                                transform:'skewX(-22deg)',background:'white',
+                                                borderLeft:'2.2px solid #000',borderRight:'2.2px solid #000'}}/>
+                                            )}
+                                            <span style={{fontSize:11,color:'white',fontWeight:700,lineHeight:1.1,position:'relative'}}>
+                                              [{g3.cnt>1?`${g3.from}~${g3.to}`:g3.from}]
+                                            </span>
+                                            <span style={{fontSize:17,color:'white',fontWeight:900,lineHeight:1.3,
+                                              whiteSpace:'nowrap',position:'relative',textShadow:'0 0 3px rgba(0,0,0,0.4)'}}>
+                                              {g3.cutLen}L{g3.cnt>1?` ×${g3.cnt}본`:''}
+                                            </span>
+                                            <span style={{fontSize:11,color:'white',lineHeight:1.1,position:'relative'}}>
+                                              실{actual}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
+                                      {bin.remaining>0&&(
+                                        <div style={{flex:1,minWidth:34,
+                                          background:reusable?'#fef9c3':'#f1f5f9',
+                                          display:'flex',flexDirection:'column',
+                                          alignItems:'center',justifyContent:'center',
+                                          borderLeft:'2.5px dashed #000'}}>
+                                          <span style={{fontSize:14,fontWeight:900,color:'#000',whiteSpace:'nowrap'}}>
+                                            {reusable?'★':''}{bin.remaining.toFixed(0)}
+                                          </span>
+                                          <span style={{fontSize:11,fontWeight:700,color:'#000'}}>
+                                            {reusable?'보관':'폐기'}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                                 {/* 효율 미니바 */}
-                                <div style={{height:3,background:'#f1f5f9',borderRadius:2,marginTop:2}}>
+                                <div className="no-print" style={{height:3,background:'#f1f5f9',borderRadius:2,marginTop:2}}>
                                   <div style={{height:'100%',borderRadius:2,
                                     width:`${Math.min(100,(used/eff2*100))}%`,
                                     background:parseFloat(eff)>=90?'#22c55e':parseFloat(eff)>=75?'#f59e0b':'#ef4444'}}/>
@@ -1322,11 +1480,16 @@ function App(){
                   </div>
                 )}
 
-                <div className="no-print" style={{display:'flex',gap:8}}>
+                <div className="no-print img-skip" style={{display:'flex',gap:8}}>
                   <button onClick={()=>window.print()}
-                    style={{flex:3,padding:11,fontSize:14,fontWeight:700,border:'none',
+                    style={{flex:2,padding:11,fontSize:14,fontWeight:700,border:'none',
                       borderRadius:8,background:'#1e293b',color:'white',cursor:'pointer'}}>
                     🖨 현장용 인쇄
+                  </button>
+                  <button onClick={saveImage}
+                    style={{flex:2,padding:11,fontSize:14,fontWeight:700,border:'none',
+                      borderRadius:8,background:'#0369a1',color:'white',cursor:'pointer'}}>
+                    📷 이미지 저장
                   </button>
                   <button onClick={resetAll}
                     style={{flex:1,padding:11,fontSize:14,fontWeight:700,
