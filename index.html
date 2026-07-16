@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>LM 가이드 레일 절단 최적화 v8</title>
+  <title>LM 가이드 레일 절단 최적화 v8.1</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -110,17 +110,27 @@ const PITCH_DB = {
   HSR:  { 15:60,20:60,25:60,30:80,35:80,45:105,55:120,65:150 },
   SR:   { 15:60,20:60,25:60,30:80,35:80 },
   SHS:  { 15:60,20:60,25:60,30:80,35:80,45:105,55:120 },
-  SRS:  { 9:20,12:25,15:40 },
-  SRSW: { '9W':30,'12W':40,'15W':40 },
+  // SRS: W(와이드) 타입 통합 — 표기: SRS15W (구 SRSW15W)
+  SRS:  { 9:20,12:25,15:40,'9W':30,'12W':40,'15W':40 },
+  SRSW: { '9W':30,'12W':40,'15W':40 }, // 구버전 저장 데이터 호환용
 };
 const SPEC_NUMS = {
   HSR: [15,20,25,30,35,45,55,65],
   SR:  [15,20,25,30,35],
   SHS: [15,20,25,30,35,45,55],
-  SRS: [9,12,15],
-  SRSW:['9W','12W','15W'],
+  SRS: [9,12,15,'9W','12W','15W'],
 };
-const SERIES_COLORS = { HSR:'#0369a1',SR:'#0891b2',SHS:'#0d9488',SRS:'#6d28d9',SRSW:'#9333ea' };
+const SERIES_COLORS = { HSR:'#0369a1',SR:'#0891b2',SHS:'#0d9488',SRS:'#6d28d9',SRSW:'#6d28d9' };
+
+// ── 원자재 표준 길이 ──
+// HSR·SR·SHS: 3000/4000 원장 | SRS 계열: 1600/1430/1420 원장
+const STD_LENGTHS = [3000,4000];
+const SRS_STD_LENGTHS = [1600,1430,1420];
+const isSRS = s => s==='SRS'||s==='SRSW';
+
+// 구버전(SRSW 시리즈) 데이터 → SRS 시리즈로 정규화 (예: SRSW+15W → SRS+15W = SRS15W)
+const normSpec  = it => (it&&it.series==='SRSW') ? {...it,series:'SRS'} : it;
+const normSpecs = arr => (Array.isArray(arr)?arr:[]).map(normSpec);
 
 // 절단 요구별 색상 팔레트
 const PALETTE = [
@@ -162,8 +172,9 @@ function validateG(series, number, cutLength, frontG, backG) {
 }
 
 // ── FFD 최적화 ───────────────────────────────────────────
-function optimize(rawMats, cutReqs, kerf, minRemainder, stdLength) {
-  const k=n(kerf), stdL=n(stdLength)||3000;
+// stdLength: HSR·SR·SHS 자동배정 원장 | srsLength: SRS 계열 자동배정 원장
+function optimize(rawMats, cutReqs, kerf, minRemainder, stdLength, srsLength) {
+  const k=n(kerf), stdL=n(stdLength)||3000, srsL=n(srsLength)||1600;
   const cuts=[];
   cutReqs.forEach((req,ri)=>{
     for(let p=0;p<(ni(req.qty)||1);p++){
@@ -192,10 +203,12 @@ function optimize(rawMats, cutReqs, kerf, minRemainder, stdLength) {
       }
     }
     if(!assigned){
-      if(need>stdL){tooLong.push(cut);return;}
+      // 규격 계열별 자동배정 원장 길이 (SRS 계열은 1600/1430/1420 중 설정값)
+      const capL=isSRS(cut.series)?srsL:stdL;
+      if(need>capL){tooLong.push({...cut,capL});return;}
       const nb={id:uid(),series:cut.series,number:cut.number,
-        length:stdL,frontG:0,backG:0,effectiveLength:stdL,
-        remaining:stdL-need,assignments:[{...cut,need}],
+        length:capL,frontG:0,backG:0,effectiveLength:capL,
+        remaining:capL-need,assignments:[{...cut,need}],
         specKey:cut.specKey,autoAdded:true};
       bins.push(nb);
     }
@@ -262,135 +275,11 @@ const inp=(w='80px',ex={})=>({border:'1.5px solid #e2e8f0',borderRadius:5,paddin
 const lbl={fontSize:11,fontWeight:700,color:'#64748b',marginBottom:3,display:'block',letterSpacing:'0.3px'};
 const Field=({label,children,w})=>(<div style={{width:w||'auto'}}><span style={lbl}>{label}</span>{children}</div>);
 
-// ── 인포그래픽 바 ────────────────────────────────────────
-function CutBar({bin,count,colorMap,kerf,minRemainder,patIdx}){
-  const eff=bin.effectiveLength;
-  const reusable=bin.remaining>=n(minRemainder);
-  const totalUsed=eff-bin.remaining;
-  const efficiency=eff>0?((totalUsed/eff)*100).toFixed(1):0;
-
-  return(
-    <div style={{marginBottom:8,background:'white',borderRadius:8,
-      border:bin.autoAdded?'1.5px solid #fde68a':'1px solid #e2e8f0',overflow:'hidden'}}>
-
-      {/* 패턴 헤더 */}
-      <div style={{background:bin.autoAdded?'#fffbeb':'#0f172a',padding:'6px 12px',
-        display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <div style={{display:'flex',alignItems:'center',gap:6}}>
-          <span style={{background:'#38bdf8',color:'#0f172a',fontWeight:800,fontSize:12,
-            borderRadius:4,padding:'1px 8px',fontFamily:'monospace'}}>
-            패턴 {patIdx+1}
-          </span>
-          <span style={{color:bin.autoAdded?'#92400e':'white',fontWeight:800,fontSize:12,fontFamily:'monospace'}}>
-            {count}본
-          </span>
-        </div>
-        <span style={{color:bin.autoAdded?'#78350f':'#94a3b8',fontSize:11,fontFamily:'monospace'}}>
-          ■ {bin.series}{bin.number} {bin.length}mm
-          {bin.frontG>0||bin.backG>0?` (앞G:${bin.frontG}/뒤G:${bin.backG})`:''}
-          &nbsp;|&nbsp;유효 {eff}mm
-        </span>
-        {bin.autoAdded&&(
-          <span style={{background:'#f59e0b',color:'white',fontSize:10,fontWeight:700,borderRadius:3,padding:'1px 6px'}}>
-            자동배정
-          </span>
-        )}
-        <div style={{marginLeft:'auto',display:'flex',gap:12,alignItems:'center'}}>
-          <span style={{color:bin.autoAdded?'#78350f':'#38bdf8',fontWeight:800,fontSize:13}}>
-            효율 {efficiency}%
-          </span>
-          <span style={{color:reusable?'#4ade80':'#f87171',fontWeight:700,fontSize:12}}>
-            {reusable?'★':''} 잔재 {bin.remaining.toFixed(0)}mm {reusable?'재사용':'폐기'}
-          </span>
-        </div>
-      </div>
-
-      {/* 비주얼 바 */}
-      <div style={{padding:'10px 12px'}}>
-        <div style={{position:'relative',width:'100%',height:52,
-          display:'flex',borderRadius:5,overflow:'hidden',
-          boxShadow:'0 1px 4px rgba(0,0,0,0.08)'}}>
-          {bin.assignments.map((a,j)=>{
-            const ck=`${a.series}${a.number}-${a.cutLen}`;
-            const col=colorMap[ck]||'#94a3b8';
-            const segPct=(a.need/eff)*100;
-            const actualLen=a.cutLen-n(kerf);
-            return(
-              <div key={j} style={{
-                width:`${segPct}%`,flexShrink:0,background:col,
-                borderRight:'1.5px solid rgba(255,255,255,0.4)',
-                display:'flex',flexDirection:'column',alignItems:'center',
-                justifyContent:'center',overflow:'hidden',cursor:'default',
-                position:'relative',
-              }}
-                title={`[${j+1}] ${a.series}${a.number} 절단:${a.cutLen}mm 실물:${actualLen}mm`}>
-                <span style={{fontSize:10,color:'rgba(255,255,255,0.8)',lineHeight:1,marginBottom:1}}>
-                  [{j+1}]
-                </span>
-                <span style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.1,
-                  textAlign:'center',padding:'0 2px',whiteSpace:'nowrap',overflow:'hidden',
-                  textOverflow:'ellipsis',maxWidth:'100%'}}>
-                  {a.series}{a.number}
-                </span>
-                <span style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1,marginTop:1}}>
-                  실{actualLen}
-                </span>
-              </div>
-            );
-          })}
-          {/* 잔재 */}
-          {bin.remaining>0&&(
-            <div style={{
-              flex:1,minWidth:20,
-              background:reusable?'#fef9c3':'#f1f5f9',
-              display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-              borderLeft:'1px dashed #cbd5e1',
-            }}>
-              <span style={{fontSize:10,color:reusable?'#92400e':'#94a3b8',
-                fontWeight:700,whiteSpace:'nowrap'}}>
-                {reusable?'★':''}{bin.remaining.toFixed(0)}
-              </span>
-              <span style={{fontSize:9,color:reusable?'#b45309':'#94a3b8'}}>
-                {reusable?'보관':'폐기'}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* 절단 번호 레이블 아래 */}
-        <div style={{display:'flex',marginTop:4,gap:0}}>
-          {bin.assignments.map((a,j)=>{
-            const segPct=(a.need/eff)*100;
-            return(
-              <div key={j} style={{width:`${segPct}%`,flexShrink:0,
-                textAlign:'center',fontSize:9,color:'#64748b',overflow:'hidden'}}>
-                {a.cutLen}L
-              </div>
-            );
-          })}
-          {bin.remaining>0&&(
-            <div style={{flex:1,textAlign:'center',fontSize:9,color:'#94a3b8'}}>
-              {bin.remaining.toFixed(0)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 사용량 바 (미니) */}
-      <div style={{height:5,background:'#f1f5f9',display:'flex'}}>
-        <div style={{width:`${Math.min(100,parseFloat(efficiency))}%`,
-          background: parseFloat(efficiency)>=90?'#22c55e':parseFloat(efficiency)>=75?'#f59e0b':'#ef4444',
-          transition:'width 0.3s'}}/>
-      </div>
-    </div>
-  );
-}
-
 // ── 메인 ─────────────────────────────────────────────────
 function App(){
   const [tab,setTab]=useState('input');
   const [settings,setSettings]=useState({
-    kerf:'3',minRemainder:'100',stdLength:'3000',
+    kerf:'3',minRemainder:'100',stdLength:'3000',srsLength:'1600',
     workNo:'',workDate:today(),worker:'',customer:'',
   });
   const [rawMats,setRawMats]=useState([]);
@@ -430,10 +319,18 @@ function App(){
   // ── v8: 원장 길이 적용 후 즉시 재계산 ──
   const applyStd=(L)=>{
     setSettings(s=>({...s,stdLength:String(L)}));
-    const res=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,L);
+    const res=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,L,settings.srsLength);
     setResults(res);
     setColorMap(buildColorMap(cutReqs));
-    setOptSnapshot(JSON.stringify({rm:rawMats,cr:cutReqs,k:settings.kerf,m:settings.minRemainder,s:String(L)}));
+    setOptSnapshot(JSON.stringify({rm:rawMats,cr:cutReqs,k:settings.kerf,m:settings.minRemainder,s:String(L),sr:settings.srsLength}));
+  };
+  // ── v8.1: SRS 원장 길이 적용 후 즉시 재계산 ──
+  const applySrs=(L)=>{
+    setSettings(s=>({...s,srsLength:String(L)}));
+    const res=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,settings.stdLength,L);
+    setResults(res);
+    setColorMap(buildColorMap(cutReqs));
+    setOptSnapshot(JSON.stringify({rm:rawMats,cr:cutReqs,k:settings.kerf,m:settings.minRemainder,s:settings.stdLength,sr:String(L)}));
   };
 
   // ── v8: 자동 복원 (최초 1회) ──
@@ -442,8 +339,9 @@ function App(){
       const d=JSON.parse(localStorage.getItem('lmcut_draft')||'null');
       if(d){
         if(d.settings)setSettings(s=>({...s,...d.settings}));
-        if(Array.isArray(d.rawMats))setRawMats(d.rawMats);
-        if(Array.isArray(d.cutReqs)){setCutReqs(d.cutReqs);setColorMap(buildColorMap(d.cutReqs));}
+        // v8.1: 구버전 SRSW 데이터 정규화
+        if(Array.isArray(d.rawMats))setRawMats(normSpecs(d.rawMats));
+        if(Array.isArray(d.cutReqs)){const cr=normSpecs(d.cutReqs);setCutReqs(cr);setColorMap(buildColorMap(cr));}
       }
       const h=JSON.parse(localStorage.getItem('lmcut_history')||'[]');
       if(Array.isArray(h))setHistory(h);
@@ -458,7 +356,7 @@ function App(){
   },[settings,rawMats,cutReqs]);
 
   // ── v8: 입력 변경 감지 ──
-  const makeSig=(rm2,cr2)=>JSON.stringify({rm:rm2,cr:cr2,k:settings.kerf,m:settings.minRemainder,s:settings.stdLength});
+  const makeSig=(rm2,cr2)=>JSON.stringify({rm:rm2,cr:cr2,k:settings.kerf,m:settings.minRemainder,s:settings.stdLength,sr:settings.srsLength});
   const inputSig=makeSig(rawMats,cutReqs);
   const isStale=!!results&&optSnapshot!==null&&optSnapshot!==inputSig;
 
@@ -477,9 +375,9 @@ function App(){
   };
   const loadHistory=(en)=>{
     setSettings(s=>({...s,...en.settings}));
-    setRawMats(en.rawMats||[]);
-    setCutReqs(en.cutReqs||[]);
-    setColorMap(buildColorMap(en.cutReqs||[]));
+    setRawMats(normSpecs(en.rawMats));
+    setCutReqs(normSpecs(en.cutReqs));
+    setColorMap(buildColorMap(normSpecs(en.cutReqs)));
     setResults(null);setOptSnapshot(null);
     setShowHistory(false);setTab('input');
   };
@@ -506,7 +404,8 @@ function App(){
 
   const setSetting=(k,v)=>setSettings(s=>({...s,[k]:v}));
   const effLen=rm=>{const v=n(rm.length)-n(rm.frontG)-n(rm.backG);return v>0?v:'-';};
-  const physLen=cutLen=>Math.max(0,n(cutLen)-n(settings.kerf));
+  // v8.1: 절단길이 = 완성품 길이. 원자재 소요 = 절단길이 + kerf (kerf 이중 반영 모순 제거)
+  const needLen=cutLen=>n(cutLen)>0?n(cutLen)+n(settings.kerf):0;
 
   const canRM=rmIn.series&&rmIn.number&&rmIn.length;
   const selectRM=(series,number)=>{
@@ -532,7 +431,7 @@ function App(){
   };
 
   const handleOptimize=()=>{
-    const res=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,settings.stdLength);
+    const res=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,settings.stdLength,settings.srsLength);
     const cm=buildColorMap(cutReqs);
     setResults(res);
     setColorMap(cm);
@@ -575,10 +474,10 @@ function App(){
         <div>
           <div style={{fontSize:15,fontWeight:800,letterSpacing:'-0.5px'}}>
             LM 가이드 레일 절단 최적화{' '}
-            <span style={{fontSize:11,color:'#38bdf8',fontWeight:600}}>v8</span>
+            <span style={{fontSize:11,color:'#38bdf8',fontWeight:600}}>v8.1</span>
           </div>
           <div style={{fontSize:10,color:'#64748b',marginTop:1}}>
-            HSR · SR · SHS · SRS · SRSW | FFD + 원자재 자동 배정 | 대구·경북
+            HSR · SR · SHS · SRS(W) | FFD + 원자재 자동 배정 | 대구·경북
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
@@ -657,7 +556,7 @@ function App(){
             <div style={{fontSize:11,fontWeight:800,color:'#94a3b8',letterSpacing:'1px',marginBottom:8}}>기본 설정</div>
             <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
               {[['절단날 손실 kerf (mm)','kerf','60px'],['최소 재사용 잔재 (mm)','minRemainder','70px'],
-                ['표준 원자재 길이 (mm)','stdLength','80px'],['작업번호','workNo','80px'],
+                ['표준 원자재 (mm)','stdLength','70px'],['작업번호','workNo','80px'],
                 ['작업일','workDate','90px'],['담당자','worker','70px'],['거래처','customer','110px']
               ].map(([label,key,w])=>(
                 <div key={key}>
@@ -665,9 +564,20 @@ function App(){
                   <input value={settings[key]} onChange={e=>setSetting(key,e.target.value)} style={inp(w)}/>
                 </div>
               ))}
+              {/* v8.1: SRS 계열 전용 원자재 길이 */}
+              <div>
+                <span style={lbl}>SRS 원자재 (mm)</span>
+                <select value={settings.srsLength} onChange={e=>setSetting('srsLength',e.target.value)}
+                  style={inp('80px',{background:'white',cursor:'pointer'})}>
+                  {SRS_STD_LENGTHS.map(L=>(<option key={L} value={String(L)}>{L}</option>))}
+                  {!SRS_STD_LENGTHS.map(String).includes(String(settings.srsLength))&&
+                    <option value={String(settings.srsLength)}>{settings.srsLength}</option>}
+                </select>
+              </div>
             </div>
             <div style={{marginTop:8,padding:'6px 10px',background:'#f0f9ff',borderRadius:6,fontSize:11,color:'#0369a1'}}>
-              💡 <b>원자재 입력은 선택사항</b> — 비워두면 절단 요구 기준으로 표준 원자재({settings.stdLength}mm)를 자동 배정합니다.
+              💡 <b>원자재 입력은 선택사항</b> — 비워두면 절단 요구 기준으로 자동 배정합니다.
+              (HSR·SR·SHS: {settings.stdLength}mm / SRS 계열: {settings.srsLength}mm)
             </div>
           </div>
 
@@ -718,12 +628,14 @@ function App(){
                     style={inp('100px',{fontWeight:800,color:SERIES_COLORS[rmIn.series]||'#94a3b8',background:'#f8fafc',cursor:'default'})}/>
                 </Field>
                 <Field label="원자재 길이 (mm)" w="110px">
-                  <input ref={rmLenRef} type="number" value={rmIn.length} placeholder="3000"
+                  <input ref={rmLenRef} type="number" value={rmIn.length}
+                    placeholder={rmIn.series&&isSRS(rmIn.series)?'1600':'3000'}
                     onChange={e=>setRmIn(p=>({...p,length:e.target.value}))}
                     onKeyDown={e=>{if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();rmFGRef.current?.focus();rmFGRef.current?.select();}}}
                     style={inp('110px')}/>
                   <div style={{display:'flex',gap:3,marginTop:4,flexWrap:'wrap'}}>
-                    {[3000,4000,1430,1600,1420].map(L=>(
+                    {/* v8.1: 선택 규격 계열에 맞는 표준 길이만 표시 */}
+                    {(rmIn.series?(isSRS(rmIn.series)?SRS_STD_LENGTHS:STD_LENGTHS):[...STD_LENGTHS,...SRS_STD_LENGTHS]).map(L=>(
                       <button key={L}
                         onClick={()=>{setRmIn(p=>({...p,length:String(L)}));
                           setTimeout(()=>{rmFGRef.current?.focus();rmFGRef.current?.select();},30);}}
@@ -774,7 +686,7 @@ function App(){
             {cutReqs.length>0&&(
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:10}}>
                 <thead><tr style={{background:'#f8fafc'}}>
-                  {['No','색','규격','절단길이','앞G','뒤G','수량','실물길이','G검증',''].map((h,j)=>(
+                  {['No','색','규격','절단길이','앞G','뒤G','수량','소요길이','G검증',''].map((h,j)=>(
                     <th key={j} style={{padding:'4px 8px',textAlign:j<3?'left':'right',
                       fontWeight:700,color:'#64748b',borderBottom:'1.5px solid #e2e8f0',fontSize:11}}>{h}</th>
                   ))}
@@ -815,7 +727,7 @@ function App(){
                         <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#0369a1'}}>
                           {isEdit?cellInp('qty',40):<span>{cr.qty} EA</span>}
                         </td>
-                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(isEdit?editRow.cutLength:cr.cutLength)}</td>
+                        <td style={{padding:'4px 8px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{needLen(isEdit?editRow.cutLength:cr.cutLength)}</td>
                         <td style={{padding:'4px 6px',textAlign:'center'}}>
                           {(()=>{
                             const vgd=isEdit?validateG(cr.series,cr.number,editRow.cutLength,editRow.frontG,editRow.backG):vg;
@@ -837,6 +749,9 @@ function App(){
                           {isEdit?(
                             <>
                               <button onClick={()=>{
+                                  // v8.1: 저장 전 입력 검증
+                                  if(!(n(editRow.cutLength)>0)){alert('절단길이를 확인해주세요 (0보다 커야 합니다).');return;}
+                                  if(!(ni(editRow.qty)>=1)){alert('수량을 확인해주세요 (1 이상).');return;}
                                   setCutReqs(p=>p.map(x=>x.id===cr.id?{...x,...editRow}:x));
                                   setEditingId(null);
                                 }}
@@ -1010,68 +925,88 @@ function App(){
                     style={{width:'100%',background:'none',border:'none',cursor:'pointer',
                       padding:'9px 12px',display:'flex',alignItems:'center',gap:8,textAlign:'left'}}>
                     <span style={{fontSize:11,fontWeight:800,color:'#94a3b8',letterSpacing:'1px'}}>
-                      📏 원장 길이 비교 (3000 vs 4000)
+                      📏 원장 길이 비교
                     </span>
-                    <span style={{fontSize:10,color:'#cbd5e1'}}>같은 절단 요구를 원장 길이별로 재계산해 비교</span>
+                    <span style={{fontSize:10,color:'#cbd5e1'}}>같은 절단 요구를 원장 길이별로 재계산해 비교 (HSR·SR·SHS: 3000/4000 | SRS: 1600/1430/1420)</span>
                     <span style={{marginLeft:'auto',fontSize:11,color:'#64748b'}}>{showCompare?'▲ 접기':'▼ 펼치기'}</span>
                   </button>
                   {showCompare&&(()=>{
                     const minRem=n(settings.minRemainder);
-                    const cmp=[3000,4000].map(L=>{
-                      const r=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,L);
+                    const hasStdCut=cutReqs.some(c=>!isSRS(c.series));
+                    const hasSrsCut=cutReqs.some(c=>isSRS(c.series));
+                    // 원장 길이 조합별 재계산
+                    const calc=(stdL,srsL)=>{
+                      const r=optimize(rawMats,cutReqs,settings.kerf,settings.minRemainder,stdL,srsL);
                       let waste=0,reuse=0,totalIn=0;
                       r.bins.forEach(b=>{
                         totalIn+=n(b.length);
                         if(b.remaining>=minRem)reuse+=b.remaining;else waste+=b.remaining;
                       });
-                      return{L,bars:r.bins.length,autoCount:r.bins.filter(b=>b.autoAdded).length,
+                      return{bars:r.bins.length,autoCount:r.bins.filter(b=>b.autoAdded).length,
                         waste:Math.round(waste),reuse:Math.round(reuse),
                         totalIn:Math.round(totalIn),tooLong:r.tooLong.length};
-                    });
-                    let best=cmp[0];
-                    if(cmp[1].waste<best.waste||(cmp[1].waste===best.waste&&cmp[1].totalIn<best.totalIn))best=cmp[1];
+                    };
+                    // 판정: 초과요구 적은 쪽 > 폐기잔재 적은 쪽 > 총 투입 적은 쪽
+                    const pickBest=rows=>rows.reduce((b,c)=>{
+                      if(!b)return c;
+                      if(c.tooLong!==b.tooLong)return c.tooLong<b.tooLong?c:b;
+                      if(c.waste!==b.waste)return c.waste<b.waste?c:b;
+                      return c.totalIn<b.totalIn?c:b;
+                    },null);
+                    const CmpTable=({title2,rows,curL,onApply})=>{
+                      const best=pickBest(rows);
+                      return(
+                        <div style={{marginBottom:10}}>
+                          <div style={{fontSize:11,fontWeight:800,color:'#334155',marginBottom:4}}>{title2}</div>
+                          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                            <thead><tr style={{background:'#f8fafc'}}>
+                              {['원장 길이','투입 원장','폐기 잔재','재사용 잔재','총 투입 길이','초과 요구','판정',''].map((h,j)=>(
+                                <th key={j} style={{padding:'5px 10px',textAlign:j===0?'left':'right',
+                                  fontWeight:700,color:'#64748b',borderBottom:'1px solid #e2e8f0',fontSize:11}}>{h}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>
+                              {rows.map(c=>{
+                                const isBest=c===best;
+                                const isCur=n(curL)===c.L;
+                                return(
+                                  <tr key={c.L} style={{borderBottom:'1px solid #f1f5f9',background:isBest?'#f0fdf4':'white'}}>
+                                    <td style={{padding:'6px 10px',fontFamily:'monospace',fontWeight:800,fontSize:13}}>
+                                      {c.L}mm {isCur&&<span style={{fontSize:10,color:'#0369a1',fontWeight:700}}>(현재)</span>}
+                                    </td>
+                                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{c.bars}개{c.autoCount>0?` (자동 ${c.autoCount})`:''}</td>
+                                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#dc2626'}}>{c.waste}mm</td>
+                                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',color:'#d97706'}}>{c.reuse}mm</td>
+                                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{c.totalIn}mm</td>
+                                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',color:c.tooLong>0?'#dc2626':'#94a3b8'}}>{c.tooLong}건</td>
+                                    <td style={{padding:'6px 10px',textAlign:'right'}}>
+                                      {isBest&&<span style={{background:'#dcfce7',color:'#166534',fontSize:11,fontWeight:800,borderRadius:4,padding:'2px 8px'}}>✓ 유리</span>}
+                                    </td>
+                                    <td style={{padding:'6px 10px',textAlign:'right'}}>
+                                      {!isCur&&(
+                                        <button onClick={()=>onApply(c.L)}
+                                          style={{background:'#0369a1',color:'white',border:'none',borderRadius:4,
+                                            padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                                          이 길이로 재계산
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    };
+                    const stdRows=hasStdCut?STD_LENGTHS.map(L=>({L,...calc(L,settings.srsLength)})):[];
+                    const srsRows=hasSrsCut?SRS_STD_LENGTHS.map(L=>({L,...calc(settings.stdLength,L)})):[];
                     return(
                       <div style={{borderTop:'1px solid #f1f5f9',padding:'10px 12px'}}>
-                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                          <thead><tr style={{background:'#f8fafc'}}>
-                            {['원장 길이','투입 원장','폐기 잔재','재사용 잔재','총 투입 길이','초과 요구','판정',''].map((h,j)=>(
-                              <th key={j} style={{padding:'5px 10px',textAlign:j===0?'left':'right',
-                                fontWeight:700,color:'#64748b',borderBottom:'1px solid #e2e8f0',fontSize:11}}>{h}</th>
-                            ))}
-                          </tr></thead>
-                          <tbody>
-                            {cmp.map(c=>{
-                              const isBest=c.L===best.L;
-                              const isCur=n(settings.stdLength)===c.L;
-                              return(
-                                <tr key={c.L} style={{borderBottom:'1px solid #f1f5f9',background:isBest?'#f0fdf4':'white'}}>
-                                  <td style={{padding:'6px 10px',fontFamily:'monospace',fontWeight:800,fontSize:13}}>
-                                    {c.L}mm {isCur&&<span style={{fontSize:10,color:'#0369a1',fontWeight:700}}>(현재)</span>}
-                                  </td>
-                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{c.bars}개{c.autoCount>0?` (자동 ${c.autoCount})`:''}</td>
-                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#dc2626'}}>{c.waste}mm</td>
-                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',color:'#d97706'}}>{c.reuse}mm</td>
-                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{c.totalIn}mm</td>
-                                  <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace',color:c.tooLong>0?'#dc2626':'#94a3b8'}}>{c.tooLong}건</td>
-                                  <td style={{padding:'6px 10px',textAlign:'right'}}>
-                                    {isBest&&<span style={{background:'#dcfce7',color:'#166534',fontSize:11,fontWeight:800,borderRadius:4,padding:'2px 8px'}}>✓ 유리</span>}
-                                  </td>
-                                  <td style={{padding:'6px 10px',textAlign:'right'}}>
-                                    {!isCur&&(
-                                      <button onClick={()=>applyStd(c.L)}
-                                        style={{background:'#0369a1',color:'white',border:'none',borderRadius:4,
-                                          padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>
-                                        이 길이로 재계산
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                        <div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>
-                          ※ 폐기 잔재가 적은 쪽을 추천하며, 같으면 총 투입 길이가 적은 쪽을 추천합니다. 직접 입력한 원자재는 양쪽 모두 동일하게 우선 사용됩니다.
+                        {hasStdCut&&<CmpTable title2="■ HSR·SR·SHS 원장 비교" rows={stdRows} curL={settings.stdLength} onApply={applyStd}/>}
+                        {hasSrsCut&&<CmpTable title2="■ SRS 계열 원장 비교 (1600 / 1430 / 1420)" rows={srsRows} curL={settings.srsLength} onApply={applySrs}/>}
+                        <div style={{fontSize:10,color:'#94a3b8',marginTop:2}}>
+                          ※ 초과 요구가 없는 쪽 → 폐기 잔재가 적은 쪽 → 총 투입 길이가 적은 쪽 순으로 추천합니다. 직접 입력한 원자재는 모든 비교에서 동일하게 우선 사용됩니다.
                         </div>
                       </div>
                     );
@@ -1107,6 +1042,7 @@ function App(){
                     {[['작업번호',settings.workNo||'—'],['작업일',settings.workDate],
                       ['담당자',settings.worker||'—'],['거래처',settings.customer||'—'],
                       ['절단날손실',settings.kerf+'mm'],['표준원자재',settings.stdLength+'mm'],
+                      ...(cutReqs.some(c=>isSRS(c.series))?[['SRS원자재',settings.srsLength+'mm']]:[]),
                     ].map(([k,v])=>(
                       <span key={k}>{k}: <b style={{color:'white'}}>{v}</b></span>
                     ))}
@@ -1279,22 +1215,17 @@ function App(){
                                   {bin.assignments.map((a,j)=>{
                                     const ck=`${a.series}${a.number}-${a.cutLen}`;
                                     const c3=colorMap[ck]||'#94a3b8';
-                                    const pct=(a.need/eff2)*100;
-                                    const actual=a.cutLen-n(settings.kerf);
                                     return(
                                       <div key={j} style={{flex:`${Math.max(1,a.need)} 1 36px`,minWidth:0,
                                         background:c3,borderRight:'1.5px solid rgba(255,255,255,0.35)',
                                         display:'flex',flexDirection:'column',alignItems:'center',
                                         justifyContent:'center',overflow:'hidden'}}
-                                        title={`[${j+1}] ${a.series}${a.number} 절단:${a.cutLen}mm 실물:${actual}mm`}>
+                                        title={`[${j+1}] ${a.series}${a.number} 절단(완성):${a.cutLen}mm 소요:${a.need}mm (kerf 포함)`}>
                                         <span style={{fontSize:9,color:'rgba(255,255,255,0.75)',lineHeight:1}}>[{j+1}]</span>
-                                        <span style={{fontSize:9,color:'white',fontWeight:800,lineHeight:1.2,
+                                        <span style={{fontSize:10,color:'white',fontWeight:800,lineHeight:1.2,
                                           whiteSpace:'nowrap',overflow:'hidden',maxWidth:'100%',
                                           textAlign:'center',padding:'0 2px'}}>
                                           {a.cutLen}L
-                                        </span>
-                                        <span style={{fontSize:9,color:'rgba(255,255,255,0.85)',lineHeight:1}}>
-                                          실{actual}
                                         </span>
                                       </div>
                                     );
@@ -1330,8 +1261,6 @@ function App(){
                                       {gs.map((g3,j)=>{
                                         const ck=`${g3.series}${g3.number}-${g3.cutLen}`;
                                         const c3=colorMap[ck]||'#94a3b8';
-                                        const pct=(g3.need/eff2)*100;
-                                        const actual=g3.cutLen-n(settings.kerf);
                                         return(
                                           <div key={j} style={{flex:`${Math.max(1,g3.need)} 1 84px`,minWidth:0,background:c3,
                                             borderRight:'2px solid #000',position:'relative',overflow:'hidden',
@@ -1348,9 +1277,6 @@ function App(){
                                             <span style={{fontSize:17,color:'white',fontWeight:900,lineHeight:1.3,
                                               whiteSpace:'nowrap',position:'relative',textShadow:'0 0 3px rgba(0,0,0,0.4)'}}>
                                               {g3.cutLen}L{g3.cnt>1?` ×${g3.cnt}본`:''}
-                                            </span>
-                                            <span style={{fontSize:11,color:'white',lineHeight:1.1,position:'relative'}}>
-                                              실{actual}
                                             </span>
                                           </div>
                                         );
@@ -1415,7 +1341,7 @@ function App(){
                         <table className="p-verify" style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                           <thead>
                             <tr style={{background:'#f8fafc'}}>
-                              {['No','규격','G값 (앞/뒤)','절단길이','실물길이','필요수량','생산수량','차이','상태'].map((h,j)=>(
+                              {['No','규격','G값 (앞/뒤)','절단길이','소요길이','필요수량','생산수량','차이','상태'].map((h,j)=>(
                                 <th key={j} style={{padding:'5px 10px',textAlign:j<3?'left':'right',
                                   fontWeight:700,color:'#64748b',
                                   borderBottom:'1px solid #e2e8f0',fontSize:11}}>{h}</th>
@@ -1440,7 +1366,7 @@ function App(){
                                   </td>
                                   <td style={{padding:'5px 10px',fontFamily:'monospace',color:'#64748b'}}>({v.frontG}/{v.backG})</td>
                                   <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.cutLength}</td>
-                                  <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{physLen(v.cutLength)}</td>
+                                  <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',color:'#64748b'}}>{needLen(v.cutLength)}</td>
                                   <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace'}}>{v.required}</td>
                                   <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{v.produced}</td>
                                   <td style={{padding:'5px 10px',textAlign:'right',fontFamily:'monospace',
@@ -1470,11 +1396,11 @@ function App(){
                   <div style={{background:'#fef2f2',borderRadius:8,padding:'10px 14px',
                     marginBottom:10,border:'1px solid #fecaca'}}>
                     <div style={{fontWeight:800,color:'#dc2626',marginBottom:6,fontSize:13}}>
-                      ⚠️ 표준 원자재({settings.stdLength}mm)보다 큰 절단 요구 {results.tooLong.length}건
+                      ⚠️ 원자재 길이를 초과하는 절단 요구 {results.tooLong.length}건
                     </div>
                     {results.tooLong.map((u,j)=>(
                       <div key={j} style={{fontSize:12,color:'#991b1b',marginBottom:2}}>
-                        · {u.series}{u.number} 절단길이 {u.cutLen}mm (요구 #{u.reqIdx+1})
+                        · {u.series}{u.number} 절단길이 {u.cutLen}mm — 자동배정 원자재 {u.capL||settings.stdLength}mm 초과 (요구 #{u.reqIdx+1})
                       </div>
                     ))}
                   </div>
@@ -1510,7 +1436,7 @@ function App(){
             <div style={{fontSize:11,color:'#94a3b8',marginBottom:12}}>
               피치 = 볼트 홀 간격(mm) | G값은 별도 직접 입력
             </div>
-            {Object.entries(PITCH_DB).map(([series,nums])=>(
+            {Object.entries(PITCH_DB).filter(([series])=>series!=='SRSW').map(([series,nums])=>(
               <div key={series} style={{marginBottom:14}}>
                 <div style={{fontWeight:800,color:SERIES_COLORS[series],marginBottom:5,fontFamily:'monospace',fontSize:13}}>{series}</div>
                 <table style={{borderCollapse:'collapse',fontSize:12}}>
@@ -1542,5 +1468,6 @@ function App(){
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(React.createElement(App));
   </script>
+  <!-- v8.1 (2026-07-16): SRS W타입 표기 통합(SRS15W) · SRS 전용 원장(1600/1430/1420) 자동배정 · kerf 이중반영 수정 -->
 </body>
 </html>
